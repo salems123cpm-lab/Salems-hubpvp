@@ -1,0 +1,563 @@
+-- ==========================================
+-- SALEMS-HUB - STEAL A BRAINROT (COMPLETE)
+-- ==========================================
+
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+local Stats = game:GetService("Stats")
+local SoundService = game:GetService("SoundService")
+local ContentProvider = game:GetService("ContentProvider")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Limpieza previa segura
+pcall(function()
+    for _, v in ipairs(PlayerGui:GetChildren()) do
+        if v.Name:match("SalemsHub") then v:Destroy() end
+    end
+    if CoreGui:FindFirstChild("SalemsHubMain") then CoreGui.SalemsHubMain:Destroy() end
+    if CoreGui:FindFirstChild("SalemsHubGrid") then CoreGui.SalemsHubGrid:Destroy() end
+    if CoreGui:FindFirstChild("SalemsHubToggle") then CoreGui.SalemsHubToggle:Destroy() end
+end)
+
+-- Audio de introducción personalizado
+pcall(function()
+    local introSound = Instance.new("Sound")
+    introSound.SoundId = "rbxassetid://121252909004354"
+    introSound.Volume = 1
+    introSound.Parent = SoundService
+    introSound:Play()
+    task.delay(10, function() introSound:Destroy() end)
+end)
+
+-- Variables globales de estado
+local customWalkSpeed = 50
+local speedEnabled = true
+local carrySpeedEnabled = false
+local laggerSpeedEnabled = false
+
+-- ==========================================
+-- 1. VENTANA PRINCIPAL
+-- ==========================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SalemsHubMain"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = CoreGui
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 245, 0, 500)
+MainFrame.Position = UDim2.new(0.03, 0, 0.1, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 13)
+MainFrame.BackgroundTransparency = 0.1
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+local Stroke = Instance.new("UIStroke", MainFrame)
+Stroke.Color = Color3.fromRGB(50, 50, 65)
+Stroke.Thickness = 1.5
+
+local BgImage = Instance.new("ImageLabel")
+BgImage.Size = UDim2.new(1, 0, 1, 0)
+BgImage.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+BgImage.BackgroundTransparency = 0
+BgImage.Image = "rbxassetid://125016146318308"
+BgImage.ImageTransparency = 0.2
+BgImage.ScaleType = Enum.ScaleType.Crop
+BgImage.ZIndex = 1
+BgImage.Parent = MainFrame
+
+task.spawn(function()
+    pcall(function() ContentProvider:PreloadAsync({BgImage}) end)
+end)
+
+local Header = Instance.new("Frame")
+Header.Size = UDim2.new(1, 0, 0, 70)
+Header.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+Header.BackgroundTransparency = 0.3
+Header.ZIndex = 2
+Header.Parent = MainFrame
+Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 8)
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 1, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "salems-hub"
+Title.TextColor3 = Color3.fromRGB(245, 245, 255)
+Title.Font = Enum.Font.GothamBlack
+Title.TextSize = 24
+Title.ZIndex = 3
+Title.Parent = Header
+
+local Scrolling = Instance.new("ScrollingFrame")
+Scrolling.Size = UDim2.new(1, -10, 1, -80)
+Scrolling.Position = UDim2.new(0, 5, 0, 75)
+Scrolling.BackgroundTransparency = 1
+Scrolling.CanvasSize = UDim2.new(0, 0, 0, 0)
+Scrolling.AutomaticCanvasSize = Enum.AutomaticSize.Y
+Scrolling.ScrollBarThickness = 2
+Scrolling.ZIndex = 2
+Scrolling.Parent = MainFrame
+
+local UIList = Instance.new("UIListLayout", Scrolling)
+UIList.Padding = UDim.new(0, 5)
+UIList.SortOrder = Enum.SortOrder.LayoutOrder
+
+local function crearSeccion(texto)
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, 0, 0, 20)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = "  " .. string.upper(texto)
+    lbl.TextColor3 = Color3.fromRGB(170, 170, 190)
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 9.5
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.ZIndex = 2
+    lbl.Parent = Scrolling
+end
+
+local function crearFilaInput(nombre, valorDefecto, callback)
+    local f = Instance.new("Frame")
+    f.Size = UDim2.new(1, 0, 0, 32)
+    f.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
+    f.BackgroundTransparency = 0.4
+    f.ZIndex = 2
+    f.Parent = Scrolling
+    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 6)
+
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(0.6, 0, 1, 0)
+    l.Position = UDim2.new(0.04, 0, 0, 0)
+    l.BackgroundTransparency = 1
+    l.Text = nombre
+    l.TextColor3 = Color3.fromRGB(215, 215, 225)
+    l.Font = Enum.Font.GothamMedium
+    l.TextSize = 10.5
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.ZIndex = 2
+    l.Parent = f
+
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(0.28, 0, 0.7, 0)
+    box.Position = UDim2.new(0.68, 0, 0.15, 0)
+    box.BackgroundColor3 = Color3.fromRGB(24, 24, 30)
+    box.Text = tostring(valorDefecto)
+    box.TextColor3 = Color3.fromRGB(255, 255, 255)
+    box.Font = Enum.Font.GothamBold
+    box.TextSize = 11
+    box.ZIndex = 2
+    box.Parent = f
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 5)
+
+    box.FocusLost:Connect(function()
+        local n = tonumber(box.Text)
+        if n then callback(n) end
+    end)
+end
+
+local function crearFilaToggle(nombre, callback)
+    local f = Instance.new("Frame")
+    f.Size = UDim2.new(1, 0, 0, 32)
+    f.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
+    f.BackgroundTransparency = 0.4
+    f.ZIndex = 2
+    f.Parent = Scrolling
+    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 6)
+
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(0.7, 0, 1, 0)
+    l.Position = UDim2.new(0.04, 0, 0, 0)
+    l.BackgroundTransparency = 1
+    l.Text = nombre
+    l.TextColor3 = Color3.fromRGB(215, 215, 225)
+    l.Font = Enum.Font.GothamMedium
+    l.TextSize = 10.5
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.ZIndex = 2
+    l.Parent = f
+
+    local tBtn = Instance.new("TextButton")
+    tBtn.Size = UDim2.new(0, 36, 0, 18)
+    tBtn.Position = UDim2.new(0.8, 0, 0.25, 0)
+    tBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    tBtn.Text = ""
+    tBtn.ZIndex = 2
+    tBtn.Parent = f
+    Instance.new("UICorner", tBtn).CornerRadius = UDim.new(1, 0)
+
+    local circulo = Instance.new("Frame", tBtn)
+    circulo.Size = UDim2.new(0, 14, 0, 14)
+    circulo.Position = UDim2.new(0, 2, 0.5, -7)
+    circulo.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+    circulo.ZIndex = 2
+    Instance.new("UICorner", circulo).CornerRadius = UDim.new(1, 0)
+
+    local activo = false
+    tBtn.MouseButton1Click:Connect(function()
+        activo = not activo
+        tBtn.BackgroundColor3 = activo and Color3.fromRGB(50, 130, 230) or Color3.fromRGB(35, 35, 45)
+        circulo.Position = activo and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)
+        callback(activo)
+    end)
+end
+
+local function aplicarAnimacion(tipo)
+    pcall(function()
+        local char = LocalPlayer.Character
+        if not char then return end
+        local animate = char:FindFirstChild("Animate")
+        if not animate then return end
+        
+        if tipo == "Zombie" then
+            animate.walk.WalkAnim.AnimationId = "rbxassetid://616158751"
+            animate.run.RunAnim.AnimationId = "rbxassetid://616163682"
+            animate.idle.Animation1.AnimationId = "rbxassetid://616158929"
+        elseif tipo == "Adidas" then
+            animate.walk.WalkAnim.AnimationId = "rbxassetid://3338006114"
+            animate.run.RunAnim.AnimationId = "rbxassetid://3338009846"
+        elseif tipo == "Comics" then
+            animate.walk.WalkAnim.AnimationId = "rbxassetid://742637544"
+            animate.run.RunAnim.AnimationId = "rbxassetid://742638842"
+        end
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do track:Stop() end
+        end
+    end)
+end
+
+crearSeccion("Speed Configuration")
+crearFilaInput("Normal Speed", 50, function(v) customWalkSpeed = v end)
+
+crearSeccion("Animations")
+crearFilaToggle("Zombie Animation", function(act) if act then aplicarAnimacion("Zombie") end end)
+crearFilaToggle("Adidas Animation", function(act) if act then aplicarAnimacion("Adidas") end end)
+crearFilaToggle("Comics Animation", function(act) if act then aplicarAnimacion("Comics") end end)
+
+crearSeccion("Visual & World")
+crearFilaToggle("Dark Sky (Cielo Oscuro)", function(activo)
+    pcall(function()
+        if activo then
+            Lighting.ClockTime = 0
+            Lighting.Brightness = 0.5
+            Lighting.OutdoorAmbient = Color3.fromRGB(20, 20, 30)
+        else
+            Lighting.ClockTime = 14
+            Lighting.Brightness = 2
+            Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+        end
+    end)
+end)
+
+
+-- ==========================================
+-- 2. BOTONERA DERECHA + BARRA INFERIOR
+-- ==========================================
+local GridGui = Instance.new("ScreenGui")
+GridGui.Name = "SalemsHubGrid"
+GridGui.ResetOnSpawn = false
+GridGui.Parent = CoreGui
+
+local GridContainer = Instance.new("ScrollingFrame")
+GridContainer.Size = UDim2.new(0, 175, 0, 360)
+GridContainer.Position = UDim2.new(1, -185, 0.12, 0)
+GridContainer.BackgroundTransparency = 1
+GridContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
+GridContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
+GridContainer.ScrollBarThickness = 0
+GridContainer.Parent = GridGui
+
+local UIGrid = Instance.new("UIGridLayout", GridContainer)
+UIGrid.CellSize = UDim2.new(0, 82, 0, 40)
+UIGrid.CellPadding = UDim2.new(0, 6, 0, 6)
+UIGrid.SortOrder = Enum.SortOrder.LayoutOrder
+
+-- BARRA INFERIOR (Visible por defecto)
+local BarFrame = Instance.new("Frame")
+BarFrame.Size = UDim2.new(0, 220, 0, 26)
+BarFrame.Position = UDim2.new(0.5, -110, 0.88, 0)
+BarFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+BarFrame.BackgroundTransparency = 0.2
+BarFrame.Visible = true
+BarFrame.Parent = GridGui
+Instance.new("UICorner", BarFrame).CornerRadius = UDim.new(0, 6)
+local barStroke = Instance.new("UIStroke", BarFrame)
+barStroke.Color = Color3.fromRGB(40, 40, 50)
+
+local BarText = Instance.new("TextLabel")
+BarText.Size = UDim2.new(1, 0, 1, 0)
+BarText.BackgroundTransparency = 1
+BarText.Text = "FPS 60  PING 0ms  salems-hub"
+BarText.TextColor3 = Color3.fromRGB(200, 200, 210)
+BarText.Font = Enum.Font.GothamBold
+BarText.TextSize = 8.5
+BarText.Parent = BarFrame
+
+local frameCount = 0
+local lastTick = tick()
+
+RunService.RenderStepped:Connect(function()
+    frameCount = frameCount + 1
+    local currentTick = tick()
+    if currentTick - lastTick >= 1 then
+        local fps = math.floor(frameCount / (currentTick - lastTick))
+        local ping = 0
+        pcall(function()
+            ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+        end)
+        
+        if BarFrame.Visible then
+            BarText.Text = "FPS " .. fps .. "  PING " .. ping .. "ms  salems-hub"
+        end
+        
+        frameCount = 0
+        lastTick = currentTick
+    end
+end)
+
+local function crearBotonGrid(texto, callback)
+    local btn = Instance.new("TextButton")
+    btn.BackgroundColor3 = Color3.fromRGB(12, 12, 15)
+    btn.BackgroundTransparency = 0.1
+    btn.Text = texto
+    btn.TextColor3 = Color3.fromRGB(240, 240, 250)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 9
+    btn.Parent = GridContainer
+    
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+    local stroke = Instance.new("UIStroke", btn)
+    stroke.Color = Color3.fromRGB(40, 40, 50)
+    stroke.Thickness = 1.2
+    
+    local activo = false
+    btn.MouseButton1Click:Connect(function()
+        activo = not activo
+        btn.BackgroundColor3 = activo and Color3.fromRGB(50, 130, 230) or Color3.fromRGB(12, 12, 15)
+        if callback then callback(activo, btn) end
+    end)
+end
+
+-- Bucle de velocidad forzado
+RunService.Heartbeat:Connect(function()
+    pcall(function()
+        local char = LocalPlayer.Character
+        if not char then return end
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+        
+        if laggerSpeedEnabled then
+            humanoid.WalkSpeed = 70
+        elseif carrySpeedEnabled then
+            humanoid.WalkSpeed = 45
+        elseif speedEnabled then
+            humanoid.WalkSpeed = customWalkSpeed
+        end
+    end)
+end)
+
+local autoPlayConn, batAimbotConn = nil, nil
+
+crearBotonGrid("AUTO PLAY", function(act)
+    if act then
+        autoPlayConn = RunService.RenderStepped:Connect(function()
+            pcall(function()
+                local char = LocalPlayer.Character
+                if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+                
+                local hrp = char.HumanoidRootPart
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if not humanoid then return end
+                
+                local targetPos = nil
+                local minDist = math.huge
+                
+                for _, obj in ipairs(workspace:GetDescendants()) do
+                    if obj:IsA("Model") and (obj.Name:lower():find("brainrot") or obj.Name:lower():find("item") or obj:FindFirstChild("Humanoid")) then
+                        if obj ~= char and obj.PrimaryPart then
+                            local dist = (hrp.Position - obj.PrimaryPart.Position).Magnitude
+                            if dist < minDist then
+                                minDist = dist
+                                targetPos = obj.PrimaryPart.Position
+                            end
+                        elseif obj:IsA("BasePart") then
+                            local dist = (hrp.Position - obj.Position).Magnitude
+                            if dist < minDist then
+                                minDist = dist
+                                targetPos = obj.Position
+                            end
+                        end
+                    end
+                end
+                
+                if targetPos then humanoid:MoveTo(targetPos) end
+            end)
+        end)
+    else
+        if autoPlayConn then autoPlayConn:Disconnect() autoPlayConn = nil end
+        pcall(function() LocalPlayer.Character.Humanoid:MoveTo(LocalPlayer.Character.HumanoidRootPart.Position) end)
+    end
+end)
+
+crearBotonGrid("BAT TP", function(act)
+    pcall(function()
+        local char = LocalPlayer.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                char.HumanoidRootPart.CFrame = p.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
+                break
+            end
+        end
+    end)
+end)
+
+crearBotonGrid("DROP BR", function(act)
+    pcall(function()
+        local char = LocalPlayer.Character
+        if char then
+            for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
+                if tool:IsA("Tool") then
+                    tool.Parent = char
+                    task.wait(0.05)
+                    tool.Parent = workspace
+                end
+            end
+        end
+    end)
+end)
+
+crearBotonGrid("BAT AIMBOT", function(act)
+    if act then
+        batAimbotConn = RunService.RenderStepped:Connect(function()
+            pcall(function()
+                local char = LocalPlayer.Character
+                if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+                
+                local targetPart = nil
+                local minDist = math.huge
+                
+                for _, p in ipairs(Players:GetPlayers()) do
+                    if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                        local dist = (char.HumanoidRootPart.Position - p.Character.HumanoidRootPart.Position).Magnitude
+                        if dist < minDist then
+                            minDist = dist
+                            targetPart = p.Character.HumanoidRootPart
+                        end
+                    end
+                end
+                
+                if targetPart then
+                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPart.Position)
+                end
+            end)
+        end)
+    else
+        if batAimbotConn then batAimbotConn:Disconnect() batAimbotConn = nil end
+    end
+end)
+
+-- TP DOWN (Eleva al cielo y cae rápido)
+crearBotonGrid("TP DOWN", function(act)
+    pcall(function()
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            local hrp = char.HumanoidRootPart
+            hrp.CFrame = hrp.CFrame + Vector3.new(0, 150, 0)
+        end
+    end)
+end)
+
+crearBotonGrid("CARRY SPEED", function(act) carrySpeedEnabled = act end)
+
+crearBotonGrid("LAGGER CARRY", function(act)
+    pcall(function()
+        local char = LocalPlayer.Character
+        if char then
+            local pprops = act and PhysicalProperties.new(100, 0.3, 0) or PhysicalProperties.new(0.7, 0.3, 0.5)
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then part.CustomPhysicalProperties = pprops end
+            end
+        end
+    end)
+end)
+
+crearBotonGrid("LAGGER SPEED", function(act) laggerSpeedEnabled = act end)
+
+crearBotonGrid("INSTA RESET", function(act)
+    pcall(function()
+        local char = LocalPlayer.Character
+        if char then
+            for _, v in ipairs(char:GetChildren()) do
+                if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then v:Destroy() end
+            end
+        end
+    end)
+end)
+
+crearBotonGrid("ANTI BAT VIP", function(act)
+    pcall(function()
+        local char = LocalPlayer.Character
+        if char then
+            local forceField = char:FindFirstChildOfClass("ForceField")
+            if act and not forceField then Instance.new("ForceField", char)
+            elseif not act and forceField then forceField:Destroy() end
+        end
+    end)
+end)
+
+-- AUTO STEAL (Teletransporte de precisión al objeto cercano)
+crearBotonGrid("AUTO STEAL", function(act)
+    pcall(function()
+        local char = LocalPlayer.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+        local hrp = char.HumanoidRootPart
+        
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("ProximityPrompt") or obj.Name:lower():find("brainrot") or obj.Name:lower():find("item") then
+                local targetPart = obj.Parent
+                if targetPart and targetPart:IsA("BasePart") then
+                    hrp.CFrame = targetPart.CFrame + Vector3.new(0, 3, 0)
+                    break
+                end
+            end
+        end
+    end)
+end)
+
+crearBotonGrid("FPS / PING", function(act)
+    BarFrame.Visible = act
+end)
+
+-- ==========================================
+-- 3. BOTÓN FLOTANTE
+-- ==========================================
+local ToggleGui = Instance.new("ScreenGui")
+ToggleGui.Name = "SalemsHubToggle"
+ToggleGui.ResetOnSpawn = false
+ToggleGui.Parent = CoreGui
+
+local OpenBtn = Instance.new("TextButton")
+OpenBtn.Size = UDim2.new(0, 38, 0, 38)
+OpenBtn.Position = UDim2.new(0, 8, 0.5, -19)
+OpenBtn.BackgroundColor3 = Color3.fromRGB(12, 12, 15)
+OpenBtn.BackgroundTransparency = 0.1
+OpenBtn.Text = "⚡"
+OpenBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+OpenBtn.TextSize = 15
+OpenBtn.Active = true
+OpenBtn.Draggable = true
+OpenBtn.Parent = ToggleGui
+Instance.new("UICorner", OpenBtn).CornerRadius = UDim.new(1, 0)
+local strokeBtn = Instance.new("UIStroke", OpenBtn)
+strokeBtn.Color = Color3.fromRGB(40, 40, 50)
+
+OpenBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+end)
+
+speedEnabled = true
