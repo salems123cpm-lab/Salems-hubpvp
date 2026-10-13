@@ -1,563 +1,353 @@
--- ==========================================
--- SALEMS-HUB - STEAL A BRAINROT (COMPLETE)
--- ==========================================
+-- SALEMS VIP PREMIUM | 99 NOCHES EN EL BOSQUE
+-- Interfaz local. La contraseña en el cliente no es autenticación segura.
 
-local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 local Lighting = game:GetService("Lighting")
-local RunService = game:GetService("RunService")
-local Stats = game:GetService("Stats")
-local SoundService = game:GetService("SoundService")
-local ContentProvider = game:GetService("ContentProvider")
-local Camera = workspace.CurrentCamera
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local UIS = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+local PASSWORD = "SAlemsVIP123"
 
--- Limpieza previa segura
-pcall(function()
-    for _, v in ipairs(PlayerGui:GetChildren()) do
-        if v.Name:match("SalemsHub") then v:Destroy() end
+local C = {
+    Black = Color3.fromRGB(10,10,13), Panel = Color3.fromRGB(22,22,27),
+    Orange = Color3.fromRGB(255,115,30), White = Color3.fromRGB(245,245,245),
+    Gray = Color3.fromRGB(155,155,165), Green = Color3.fromRGB(50,210,100),
+    Red = Color3.fromRGB(255,65,75), Purple = Color3.fromRGB(190,100,255)
+}
+local ActiveColor = C.Orange
+local Old = PlayerGui:FindFirstChild("SalemsVIPPremium")
+if Old then Old:Destroy() end
+
+local GUI = Instance.new("ScreenGui")
+GUI.Name, GUI.ResetOnSpawn, GUI.DisplayOrder = "SalemsVIPPremium", false, 100
+GUI.Parent = PlayerGui
+
+local Settings = {
+    PlayerESP=false, EnemyESP=false, ResourceESP=false, Distance=true,
+    Fullbright=false, NoFog=false, Speed=false, Jump=false, InfiniteJump=false
+}
+local Marks = {}
+local Original = {
+    Ambient=Lighting.Ambient, OutdoorAmbient=Lighting.OutdoorAmbient,
+    Brightness=Lighting.Brightness, ClockTime=Lighting.ClockTime,
+    FogStart=Lighting.FogStart, FogEnd=Lighting.FogEnd
+}
+local OriginalSpeed, OriginalJump, JumpConnection = 16, 50, nil
+
+local function Corner(obj, radius)
+    local x=Instance.new("UICorner"); x.CornerRadius=UDim.new(0,radius or 8); x.Parent=obj
+end
+local function Border(obj,color,thickness)
+    local x=Instance.new("UIStroke"); x.Color=color or ActiveColor; x.Thickness=thickness or 1; x.Parent=obj; return x
+end
+local function Label(parent,text,size,pos,color,textSize)
+    local x=Instance.new("TextLabel")
+    x.Size,x.Position=size,pos; x.BackgroundTransparency=1; x.Text=text
+    x.TextColor3=color or C.White; x.Font=Enum.Font.GothamBold
+    x.TextSize=textSize or 13; x.TextWrapped=true; x.Parent=parent
+    return x
+end
+local function Button(parent,text,callback)
+    local b=Instance.new("TextButton")
+    b.Size=UDim2.new(1,0,0,37); b.BackgroundColor3=C.Panel; b.Text=text
+    b.TextColor3=C.White; b.Font=Enum.Font.Gotham; b.TextSize=12; b.Parent=parent
+    Corner(b,7); Border(b,ActiveColor,1); b.MouseButton1Click:Connect(callback); return b
+end
+local function Toggle(parent,text,initial,callback)
+    local enabled=initial
+    local b
+    local function refresh()
+        b.Text=text..(enabled and "  [ON]" or "  [OFF]")
+        b.BackgroundColor3=enabled and Color3.fromRGB(30,90,50) or C.Panel
     end
-    if CoreGui:FindFirstChild("SalemsHubMain") then CoreGui.SalemsHubMain:Destroy() end
-    if CoreGui:FindFirstChild("SalemsHubGrid") then CoreGui.SalemsHubGrid:Destroy() end
-    if CoreGui:FindFirstChild("SalemsHubToggle") then CoreGui.SalemsHubToggle:Destroy() end
+    b=Button(parent,text,function() enabled=not enabled; refresh(); callback(enabled) end)
+    refresh(); return b
+end
+local function Notify(text)
+    pcall(function() game:GetService("StarterGui"):SetCore("SendNotification",{Title="SALEMS VIP",Text=text,Duration=3}) end)
+end
+local function Humanoid()
+    local char=Player.Character; return char and char:FindFirstChildOfClass("Humanoid")
+end
+local function Root()
+    local char=Player.Character; return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+-- LOGIN
+local Login=Instance.new("Frame")
+Login.Size=UDim2.fromOffset(330,290); Login.Position=UDim2.new(0.5,-165,0.5,-145)
+Login.BackgroundColor3=C.Black; Login.Parent=GUI; Corner(Login,14); Border(Login,C.Orange,2)
+local LoginHeader=Instance.new("Frame")
+LoginHeader.Size=UDim2.new(1,0,0,48); LoginHeader.BackgroundColor3=C.Panel; LoginHeader.Parent=Login; Corner(LoginHeader,12)
+Label(LoginHeader,"🔥 SALEMS VIP",UDim2.new(1,-20,1,0),UDim2.new(0,12,0,0),C.Orange,19).TextXAlignment=Enum.TextXAlignment.Left
+Label(Login,"PREMIUM ACCESS",UDim2.new(1,0,0,28),UDim2.new(0,0,0,58),C.White,17)
+Label(Login,"👤 Usuario: "..Player.Name,UDim2.new(1,-20,0,22),UDim2.new(0,10,0,88),C.Orange,12)
+Label(Login,"Nombre visible: "..Player.DisplayName,UDim2.new(1,-20,0,20),UDim2.new(0,10,0,108),C.Gray,11)
+Label(Login,"Introduce la contraseña para continuar",UDim2.new(1,-20,0,22),UDim2.new(0,10,0,130),C.Gray,11)
+
+local PasswordBox=Instance.new("TextBox")
+PasswordBox.Size=UDim2.new(1,-36,0,40); PasswordBox.Position=UDim2.new(0,18,0,157)
+PasswordBox.BackgroundColor3=C.Panel; PasswordBox.TextColor3=C.White; PasswordBox.PlaceholderColor3=C.Gray
+PasswordBox.PlaceholderText="🔒 Contraseña..."; PasswordBox.Text=""; PasswordBox.ClearTextOnFocus=false
+PasswordBox.Font=Enum.Font.Gotham; PasswordBox.TextSize=14; PasswordBox.Parent=Login; Corner(PasswordBox,8); Border(PasswordBox,C.Orange)
+local Enter=Instance.new("TextButton")
+Enter.Size=UDim2.new(1,-36,0,38); Enter.Position=UDim2.new(0,18,0,205)
+Enter.BackgroundColor3=C.Orange; Enter.Text="DESBLOQUEAR  ➜"; Enter.TextColor3=C.Black
+Enter.Font=Enum.Font.GothamBold; Enter.TextSize=13; Enter.Parent=Login; Corner(Enter,8)
+local Status=Label(Login,"🔐 Sistema de acceso",UDim2.new(1,-20,0,22),UDim2.new(0,10,0,249),C.Gray,11)
+
+-- MENÚ PRINCIPAL
+local Main=Instance.new("Frame")
+Main.Size=UDim2.new(0.92,0,0,440); Main.Position=UDim2.new(0.04,0,0.5,-220)
+Main.BackgroundColor3=C.Black; Main.Visible=false; Main.Parent=GUI; Corner(Main,12)
+local MainBorder=Border(Main,C.Orange,2)
+local Header=Instance.new("Frame")
+Header.Size=UDim2.new(1,0,0,45); Header.BackgroundColor3=C.Panel; Header.Parent=Main; Corner(Header,10)
+Label(Header,"🌲 SALEMS VIP | 99 NOCHES",UDim2.new(1,-55,1,0),UDim2.new(0,12,0,0),C.Orange,15).TextXAlignment=Enum.TextXAlignment.Left
+local Close=Instance.new("TextButton")
+Close.Size=UDim2.fromOffset(35,32); Close.Position=UDim2.new(1,-40,0,6); Close.BackgroundColor3=C.Red
+Close.Text="✕"; Close.TextColor3=C.White; Close.Font=Enum.Font.GothamBold; Close.TextSize=16; Close.Parent=Header; Corner(Close,7)
+
+local Tabs=Instance.new("Frame")
+Tabs.Position=UDim2.new(0,7,0,51); Tabs.Size=UDim2.new(1,-14,0,35); Tabs.BackgroundTransparency=1; Tabs.Parent=Main
+local TabLayout=Instance.new("UIListLayout")
+TabLayout.FillDirection=Enum.FillDirection.Horizontal; TabLayout.Padding=UDim.new(0,4)
+TabLayout.HorizontalAlignment=Enum.HorizontalAlignment.Center; TabLayout.Parent=Tabs
+local Content=Instance.new("ScrollingFrame")
+Content.Position=UDim2.new(0,7,0,92); Content.Size=UDim2.new(1,-14,1,-99)
+Content.BackgroundColor3=C.Panel; Content.BorderSizePixel=0; Content.ScrollBarThickness=4
+Content.AutomaticCanvasSize=Enum.AutomaticSize.Y; Content.CanvasSize=UDim2.new(); Content.Parent=Main; Corner(Content,8)
+local Pages,TabButtons,CurrentTab={},{},nil
+
+local function MakePage(name,icon)
+    local tab=Instance.new("TextButton")
+    tab.Size=UDim2.new(1/5,-5,1,0); tab.BackgroundColor3=C.Black; tab.Text=icon.." "..name
+    tab.TextColor3=C.White; tab.TextSize=10; tab.Font=Enum.Font.GothamBold; tab.Parent=Tabs; Corner(tab,6)
+    local page=Instance.new("Frame")
+    page.Name=name; page.Size=UDim2.new(1,-12,0,0); page.Position=UDim2.new(0,6,0,6)
+    page.AutomaticSize=Enum.AutomaticSize.Y; page.BackgroundTransparency=1; page.Visible=false; page.Parent=Content
+    local layout=Instance.new("UIListLayout"); layout.Padding=UDim.new(0,6); layout.Parent=page
+    Pages[name],TabButtons[name]=page,tab
+    tab.MouseButton1Click:Connect(function()
+        CurrentTab=name
+        for n,p in pairs(Pages) do p.Visible=n==name end
+        for n,b in pairs(TabButtons) do b.BackgroundColor3=n==name and ActiveColor or C.Black end
+    end)
+    return page
+end
+local function Section(parent,text)
+    Label(parent,text,UDim2.new(1,0,0,25),UDim2.new(),ActiveColor,14).TextXAlignment=Enum.TextXAlignment.Left
+end
+local Home=MakePage("Inicio","🏠")
+local ESP=MakePage("ESP","👁")
+local Move=MakePage("Mover","🏃")
+local Visual=MakePage("Visual","🌙")
+local Info=MakePage("Info","📊")
+
+-- ESP local
+local function ClearESP(category)
+    for object,data in pairs(Marks) do
+        if not category or data.Category==category then
+            if data.Highlight then data.Highlight:Destroy() end
+            if data.Billboard then data.Billboard:Destroy() end
+            Marks[object]=nil
+        end
+    end
+end
+local function AddESP(object,category,color)
+    if Marks[object] or object==Player.Character then return end
+    if not object:IsA("Model") and not object:IsA("BasePart") then return end
+    local highlight=Instance.new("Highlight")
+    highlight.Name="SalemsLocalHighlight"; highlight.Adornee=object; highlight.FillColor=color
+    highlight.OutlineColor=color; highlight.FillTransparency=0.75
+    highlight.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; highlight.Parent=GUI
+    local part=object:IsA("BasePart") and object or object.PrimaryPart or object:FindFirstChildWhichIsA("BasePart",true)
+    local billboard
+    if part then
+        billboard=Instance.new("BillboardGui"); billboard.Adornee=part; billboard.Size=UDim2.fromOffset(170,30)
+        billboard.StudsOffset=Vector3.new(0,3,0); billboard.AlwaysOnTop=true; billboard.Parent=GUI
+        local text=Instance.new("TextLabel"); text.Size=UDim2.fromScale(1,1); text.BackgroundTransparency=1
+        text.TextColor3=color; text.TextStrokeTransparency=0.2; text.Font=Enum.Font.GothamBold
+        text.TextSize=12; text.Text=object.Name; text.Parent=billboard
+    end
+    Marks[object]={Highlight=highlight,Billboard=billboard,Category=category}
+end
+local function Contains(name,keywords)
+    name=string.lower(name)
+    for _,keyword in ipairs(keywords) do if string.find(name,keyword,1,true) then return true end end
+    return false
+end
+local EnemyNames={"wolf","deer","cultist","monster","bear","owl","enemy","monstruo","enemigo"}
+local ResourceNames={"tree","wood","log","scrap","stone","coal","chest","crate","rock","ore","madera","piedra","cofre","arbol","árbol"}
+local function ScanESP()
+    if Settings.PlayerESP then
+        for _,p in ipairs(Players:GetPlayers()) do
+            if p~=Player and p.Character then AddESP(p.Character,"Players",Color3.fromRGB(60,170,255)) end
+        end
+    else ClearESP("Players") end
+    for _,obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") then
+            if Settings.EnemyESP and Contains(obj.Name,EnemyNames) then AddESP(obj,"Enemies",C.Red) end
+            if Settings.ResourceESP and Contains(obj.Name,ResourceNames) then AddESP(obj,"Resources",C.Green) end
+        end
+    end
+    if not Settings.EnemyESP then ClearESP("Enemies") end
+    if not Settings.ResourceESP then ClearESP("Resources") end
+end
+
+Section(Home,"🌲 BIENVENIDO A SALEMS VIP")
+Button(Home,"🔄 Actualizar ESP",function() ScanESP(); Notify("Búsqueda completada") end)
+Button(Home,"🧹 Limpiar ESP",function() ClearESP(); Notify("Marcas eliminadas") end)
+Button(Home,"📍 Mostrar coordenadas",function()
+    local r=Root()
+    if r then Notify(string.format("X %.0f | Y %.0f | Z %.0f",r.Position.X,r.Position.Y,r.Position.Z)) end
+end)
+Section(ESP,"👁️ ESP POR CATEGORÍAS")
+Toggle(ESP,"👥 ESP jugadores",false,function(v) Settings.PlayerESP=v; if not v then ClearESP("Players") else ScanESP() end end)
+Toggle(ESP,"👹 ESP enemigos",false,function(v) Settings.EnemyESP=v; if not v then ClearESP("Enemies") else ScanESP() end end)
+Toggle(ESP,"🌳 ESP recursos",false,function(v) Settings.ResourceESP=v; if not v then ClearESP("Resources") else ScanESP() end end)
+Toggle(ESP,"📏 Mostrar distancias",true,function(v) Settings.Distance=v end)
+local Search=Instance.new("TextBox")
+Search.Size=UDim2.new(1,0,0,36); Search.BackgroundColor3=C.Black; Search.TextColor3=C.White
+Search.PlaceholderText="🔍 Buscar recurso..."; Search.PlaceholderColor3=C.Gray; Search.Text=""
+Search.ClearTextOnFocus=false; Search.Font=Enum.Font.Gotham; Search.TextSize=12; Search.Parent=ESP; Corner(Search,7)
+Search:GetPropertyChangedSignal("Text"):Connect(function()
+    local query=string.lower(Search.Text)
+    for object,data in pairs(Marks) do
+        if data.Billboard then
+            local label=data.Billboard:FindFirstChildOfClass("TextLabel")
+            if label then
+                local matches=query=="" or string.find(string.lower(object.Name),query,1,true)
+                label.Visible=matches
+                if data.Highlight then data.Highlight.Enabled=matches end
+            end
+        end
+    end
+end)
+Button(ESP,"🧹 Borrar todas las marcas",function() ClearESP() end)
+
+-- MOVIMIENTO
+Section(Move,"🏃 MOVIMIENTO")
+Toggle(Move,"⚡ Velocidad aumentada",false,function(v)
+    Settings.Speed=v; local h=Humanoid()
+    if h then if v then OriginalSpeed=h.WalkSpeed; h.WalkSpeed=32 else h.WalkSpeed=OriginalSpeed end end
+end)
+Toggle(Move,"🦘 Salto aumentado",false,function(v)
+    Settings.Jump=v; local h=Humanoid()
+    if h then if v then OriginalJump=h.JumpPower; h.UseJumpPower=true; h.JumpPower=100 else h.JumpPower=OriginalJump end end
+end)
+Toggle(Move,"♾️ Salto infinito",false,function(v)
+    Settings.InfiniteJump=v
+    if JumpConnection then JumpConnection:Disconnect(); JumpConnection=nil end
+    if v then JumpConnection=UIS.JumpRequest:Connect(function()
+        local h=Humanoid(); if h and h.Health>0 then h:ChangeState(Enum.HumanoidStateType.Jumping) end
+    end) end
+end)
+Button(Move,"↩️ Restaurar movimiento",function()
+    Settings.Speed,Settings.Jump,Settings.InfiniteJump=false,false,false
+    local h=Humanoid(); if h then h.WalkSpeed=16; h.UseJumpPower=true; h.JumpPower=50 end
+    if JumpConnection then JumpConnection:Disconnect(); JumpConnection=nil end
+    Notify("Movimiento restaurado")
 end)
 
--- Audio de introducción personalizado
-pcall(function()
-    local introSound = Instance.new("Sound")
-    introSound.SoundId = "rbxassetid://121252909004354"
-    introSound.Volume = 1
-    introSound.Parent = SoundService
-    introSound:Play()
-    task.delay(10, function() introSound:Destroy() end)
+-- VISUALES
+Section(Visual,"🌙 AJUSTES VISUALES")
+Toggle(Visual,"💡 Fullbright",false,function(v)
+    Settings.Fullbright=v
+    if v then
+        Lighting.Ambient=Color3.new(1,1,1); Lighting.OutdoorAmbient=Color3.new(1,1,1)
+        Lighting.Brightness=3; Lighting.ClockTime=14
+    else
+        Lighting.Ambient=Original.Ambient; Lighting.OutdoorAmbient=Original.OutdoorAmbient
+        Lighting.Brightness=Original.Brightness; Lighting.ClockTime=Original.ClockTime
+    end
+end)
+Toggle(Visual,"🌫️ Reducir niebla",false,function(v)
+    Settings.NoFog=v
+    if v then Lighting.FogStart=0; Lighting.FogEnd=100000
+    else Lighting.FogStart=Original.FogStart; Lighting.FogEnd=Original.FogEnd end
+end)
+local function SetTheme(name,color,background)
+    ActiveColor=color; C.Black=background; Main.BackgroundColor3=background; MainBorder.Color=color
+    for tabName,button in pairs(TabButtons) do button.BackgroundColor3=tabName==CurrentTab and color or background end
+    Notify("Tema: "..name)
+end
+Button(Visual,"🎃 Tema Halloween",function() SetTheme("Halloween",C.Orange,Color3.fromRGB(10,10,13)) end)
+Button(Visual,"💜 Tema morado",function() SetTheme("Morado",C.Purple,Color3.fromRGB(18,10,28)) end)
+Button(Visual,"💚 Tema verde",function() SetTheme("Verde",C.Green,Color3.fromRGB(8,20,12)) end)
+Button(Visual,"❤️ Tema rojo",function() SetTheme("Rojo",C.Red,Color3.fromRGB(25,8,12)) end)
+Button(Visual,"↩️ Restaurar iluminación",function()
+    Lighting.Ambient=Original.Ambient; Lighting.OutdoorAmbient=Original.OutdoorAmbient
+    Lighting.Brightness=Original.Brightness; Lighting.ClockTime=Original.ClockTime
+    Lighting.FogStart=Original.FogStart; Lighting.FogEnd=Original.FogEnd
+    Settings.Fullbright,Settings.NoFog=false,false; Notify("Iluminación restaurada")
 end)
 
--- Variables globales de estado
-local customWalkSpeed = 50
-local speedEnabled = true
-local carrySpeedEnabled = false
-local laggerSpeedEnabled = false
+-- INFORMACIÓN
+Section(Info,"📊 INFORMACIÓN DEL JUGADOR")
+local HealthLabel=Label(Info,"❤️ Vida: --",UDim2.new(1,0,0,30),UDim2.new(),C.White,13)
+local PlayersLabel=Label(Info,"👥 Jugadores: --",UDim2.new(1,0,0,30),UDim2.new(),C.White,13)
+local PositionLabel=Label(Info,"📍 Coordenadas: --",UDim2.new(1,0,0,40),UDim2.new(),C.White,12)
+local function UpdateInfo()
+    local h,r=Humanoid(),Root()
+    if h then HealthLabel.Text=string.format("❤️ Vida: %.0f / %.0f",h.Health,h.MaxHealth) end
+    PlayersLabel.Text="👥 Jugadores: "..#Players:GetPlayers()
+    if r then PositionLabel.Text=string.format("📍 X: %.0f | Y: %.0f | Z: %.0f",r.Position.X,r.Position.Y,r.Position.Z) end
+end
+Button(Info,"🔄 Actualizar información",UpdateInfo)
 
--- ==========================================
--- 1. VENTANA PRINCIPAL
--- ==========================================
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "SalemsHubMain"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = CoreGui
+-- MINIMIZAR Y ARRASTRAR
+local Open=Instance.new("TextButton")
+Open.Size=UDim2.fromOffset(55,48); Open.Position=UDim2.new(0,12,0.5,-24)
+Open.BackgroundColor3=C.Black; Open.Text="🌲"; Open.TextSize=24; Open.Visible=false; Open.Parent=GUI
+Corner(Open,10); Border(Open,C.Orange,2)
+Close.MouseButton1Click:Connect(function() Main.Visible=false; Open.Visible=true end)
+Open.MouseButton1Click:Connect(function() Main.Visible=true; Open.Visible=false end)
 
-local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 245, 0, 500)
-MainFrame.Position = UDim2.new(0.03, 0, 0.1, 0)
-MainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 13)
-MainFrame.BackgroundTransparency = 0.1
-MainFrame.Active = true
-MainFrame.Draggable = true
-MainFrame.Parent = ScreenGui
+do
+    local dragging,dragInput,dragStart,startPos=false,nil,nil,nil
+    Header.InputBegan:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+            dragging=true; dragStart=input.Position; startPos=Main.Position
+            input.Changed:Connect(function() if input.UserInputState==Enum.UserInputState.End then dragging=false end end)
+        end
+    end)
+    Header.InputChanged:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch then dragInput=input end
+    end)
+    UIS.InputChanged:Connect(function(input)
+        if dragging and input==dragInput then
+            local delta=input.Position-dragStart
+            Main.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+delta.X,startPos.Y.Scale,startPos.Y.Offset+delta.Y)
+        end
+    end)
+end
 
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
-local Stroke = Instance.new("UIStroke", MainFrame)
-Stroke.Color = Color3.fromRGB(50, 50, 65)
-Stroke.Thickness = 1.5
-
-local BgImage = Instance.new("ImageLabel")
-BgImage.Size = UDim2.new(1, 0, 1, 0)
-BgImage.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-BgImage.BackgroundTransparency = 0
-BgImage.Image = "rbxassetid://125016146318308"
-BgImage.ImageTransparency = 0.2
-BgImage.ScaleType = Enum.ScaleType.Crop
-BgImage.ZIndex = 1
-BgImage.Parent = MainFrame
+-- DESBLOQUEO
+local function Unlock()
+    if PasswordBox.Text==PASSWORD then
+        Status.Text="✅ Acceso concedido"; Status.TextColor3=C.Green
+        task.wait(0.35); Login.Visible=false; Main.Visible=true; CurrentTab="Inicio"
+        for name,page in pairs(Pages) do page.Visible=name==CurrentTab end
+        for name,button in pairs(TabButtons) do button.BackgroundColor3=name==CurrentTab and ActiveColor or C.Black end
+        Notify("Bienvenido, "..Player.Name)
+    else
+        Status.Text="❌ Contraseña incorrecta"; Status.TextColor3=C.Red; PasswordBox.Text=""
+    end
+end
+Enter.MouseButton1Click:Connect(Unlock)
+PasswordBox.FocusLost:Connect(function(enterPressed) if enterPressed then Unlock() end end)
 
 task.spawn(function()
-    pcall(function() ContentProvider:PreloadAsync({BgImage}) end)
-end)
-
-local Header = Instance.new("Frame")
-Header.Size = UDim2.new(1, 0, 0, 70)
-Header.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
-Header.BackgroundTransparency = 0.3
-Header.ZIndex = 2
-Header.Parent = MainFrame
-Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 8)
-
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 1, 0)
-Title.BackgroundTransparency = 1
-Title.Text = "salems-hub"
-Title.TextColor3 = Color3.fromRGB(245, 245, 255)
-Title.Font = Enum.Font.GothamBlack
-Title.TextSize = 24
-Title.ZIndex = 3
-Title.Parent = Header
-
-local Scrolling = Instance.new("ScrollingFrame")
-Scrolling.Size = UDim2.new(1, -10, 1, -80)
-Scrolling.Position = UDim2.new(0, 5, 0, 75)
-Scrolling.BackgroundTransparency = 1
-Scrolling.CanvasSize = UDim2.new(0, 0, 0, 0)
-Scrolling.AutomaticCanvasSize = Enum.AutomaticSize.Y
-Scrolling.ScrollBarThickness = 2
-Scrolling.ZIndex = 2
-Scrolling.Parent = MainFrame
-
-local UIList = Instance.new("UIListLayout", Scrolling)
-UIList.Padding = UDim.new(0, 5)
-UIList.SortOrder = Enum.SortOrder.LayoutOrder
-
-local function crearSeccion(texto)
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(1, 0, 0, 20)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = "  " .. string.upper(texto)
-    lbl.TextColor3 = Color3.fromRGB(170, 170, 190)
-    lbl.Font = Enum.Font.GothamBold
-    lbl.TextSize = 9.5
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.ZIndex = 2
-    lbl.Parent = Scrolling
-end
-
-local function crearFilaInput(nombre, valorDefecto, callback)
-    local f = Instance.new("Frame")
-    f.Size = UDim2.new(1, 0, 0, 32)
-    f.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
-    f.BackgroundTransparency = 0.4
-    f.ZIndex = 2
-    f.Parent = Scrolling
-    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 6)
-
-    local l = Instance.new("TextLabel")
-    l.Size = UDim2.new(0.6, 0, 1, 0)
-    l.Position = UDim2.new(0.04, 0, 0, 0)
-    l.BackgroundTransparency = 1
-    l.Text = nombre
-    l.TextColor3 = Color3.fromRGB(215, 215, 225)
-    l.Font = Enum.Font.GothamMedium
-    l.TextSize = 10.5
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    l.ZIndex = 2
-    l.Parent = f
-
-    local box = Instance.new("TextBox")
-    box.Size = UDim2.new(0.28, 0, 0.7, 0)
-    box.Position = UDim2.new(0.68, 0, 0.15, 0)
-    box.BackgroundColor3 = Color3.fromRGB(24, 24, 30)
-    box.Text = tostring(valorDefecto)
-    box.TextColor3 = Color3.fromRGB(255, 255, 255)
-    box.Font = Enum.Font.GothamBold
-    box.TextSize = 11
-    box.ZIndex = 2
-    box.Parent = f
-    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 5)
-
-    box.FocusLost:Connect(function()
-        local n = tonumber(box.Text)
-        if n then callback(n) end
-    end)
-end
-
-local function crearFilaToggle(nombre, callback)
-    local f = Instance.new("Frame")
-    f.Size = UDim2.new(1, 0, 0, 32)
-    f.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
-    f.BackgroundTransparency = 0.4
-    f.ZIndex = 2
-    f.Parent = Scrolling
-    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 6)
-
-    local l = Instance.new("TextLabel")
-    l.Size = UDim2.new(0.7, 0, 1, 0)
-    l.Position = UDim2.new(0.04, 0, 0, 0)
-    l.BackgroundTransparency = 1
-    l.Text = nombre
-    l.TextColor3 = Color3.fromRGB(215, 215, 225)
-    l.Font = Enum.Font.GothamMedium
-    l.TextSize = 10.5
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    l.ZIndex = 2
-    l.Parent = f
-
-    local tBtn = Instance.new("TextButton")
-    tBtn.Size = UDim2.new(0, 36, 0, 18)
-    tBtn.Position = UDim2.new(0.8, 0, 0.25, 0)
-    tBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-    tBtn.Text = ""
-    tBtn.ZIndex = 2
-    tBtn.Parent = f
-    Instance.new("UICorner", tBtn).CornerRadius = UDim.new(1, 0)
-
-    local circulo = Instance.new("Frame", tBtn)
-    circulo.Size = UDim2.new(0, 14, 0, 14)
-    circulo.Position = UDim2.new(0, 2, 0.5, -7)
-    circulo.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
-    circulo.ZIndex = 2
-    Instance.new("UICorner", circulo).CornerRadius = UDim.new(1, 0)
-
-    local activo = false
-    tBtn.MouseButton1Click:Connect(function()
-        activo = not activo
-        tBtn.BackgroundColor3 = activo and Color3.fromRGB(50, 130, 230) or Color3.fromRGB(35, 35, 45)
-        circulo.Position = activo and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)
-        callback(activo)
-    end)
-end
-
-local function aplicarAnimacion(tipo)
-    pcall(function()
-        local char = LocalPlayer.Character
-        if not char then return end
-        local animate = char:FindFirstChild("Animate")
-        if not animate then return end
-        
-        if tipo == "Zombie" then
-            animate.walk.WalkAnim.AnimationId = "rbxassetid://616158751"
-            animate.run.RunAnim.AnimationId = "rbxassetid://616163682"
-            animate.idle.Animation1.AnimationId = "rbxassetid://616158929"
-        elseif tipo == "Adidas" then
-            animate.walk.WalkAnim.AnimationId = "rbxassetid://3338006114"
-            animate.run.RunAnim.AnimationId = "rbxassetid://3338009846"
-        elseif tipo == "Comics" then
-            animate.walk.WalkAnim.AnimationId = "rbxassetid://742637544"
-            animate.run.RunAnim.AnimationId = "rbxassetid://742638842"
-        end
-        local humanoid = char:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do track:Stop() end
-        end
-    end)
-end
-
-crearSeccion("Speed Configuration")
-crearFilaInput("Normal Speed", 50, function(v) customWalkSpeed = v end)
-
-crearSeccion("Animations")
-crearFilaToggle("Zombie Animation", function(act) if act then aplicarAnimacion("Zombie") end end)
-crearFilaToggle("Adidas Animation", function(act) if act then aplicarAnimacion("Adidas") end end)
-crearFilaToggle("Comics Animation", function(act) if act then aplicarAnimacion("Comics") end end)
-
-crearSeccion("Visual & World")
-crearFilaToggle("Dark Sky (Cielo Oscuro)", function(activo)
-    pcall(function()
-        if activo then
-            Lighting.ClockTime = 0
-            Lighting.Brightness = 0.5
-            Lighting.OutdoorAmbient = Color3.fromRGB(20, 20, 30)
-        else
-            Lighting.ClockTime = 14
-            Lighting.Brightness = 2
-            Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
-        end
-    end)
-end)
-
-
--- ==========================================
--- 2. BOTONERA DERECHA + BARRA INFERIOR
--- ==========================================
-local GridGui = Instance.new("ScreenGui")
-GridGui.Name = "SalemsHubGrid"
-GridGui.ResetOnSpawn = false
-GridGui.Parent = CoreGui
-
-local GridContainer = Instance.new("ScrollingFrame")
-GridContainer.Size = UDim2.new(0, 175, 0, 360)
-GridContainer.Position = UDim2.new(1, -185, 0.12, 0)
-GridContainer.BackgroundTransparency = 1
-GridContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
-GridContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
-GridContainer.ScrollBarThickness = 0
-GridContainer.Parent = GridGui
-
-local UIGrid = Instance.new("UIGridLayout", GridContainer)
-UIGrid.CellSize = UDim2.new(0, 82, 0, 40)
-UIGrid.CellPadding = UDim2.new(0, 6, 0, 6)
-UIGrid.SortOrder = Enum.SortOrder.LayoutOrder
-
--- BARRA INFERIOR (Visible por defecto)
-local BarFrame = Instance.new("Frame")
-BarFrame.Size = UDim2.new(0, 220, 0, 26)
-BarFrame.Position = UDim2.new(0.5, -110, 0.88, 0)
-BarFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
-BarFrame.BackgroundTransparency = 0.2
-BarFrame.Visible = true
-BarFrame.Parent = GridGui
-Instance.new("UICorner", BarFrame).CornerRadius = UDim.new(0, 6)
-local barStroke = Instance.new("UIStroke", BarFrame)
-barStroke.Color = Color3.fromRGB(40, 40, 50)
-
-local BarText = Instance.new("TextLabel")
-BarText.Size = UDim2.new(1, 0, 1, 0)
-BarText.BackgroundTransparency = 1
-BarText.Text = "FPS 60  PING 0ms  salems-hub"
-BarText.TextColor3 = Color3.fromRGB(200, 200, 210)
-BarText.Font = Enum.Font.GothamBold
-BarText.TextSize = 8.5
-BarText.Parent = BarFrame
-
-local frameCount = 0
-local lastTick = tick()
-
-RunService.RenderStepped:Connect(function()
-    frameCount = frameCount + 1
-    local currentTick = tick()
-    if currentTick - lastTick >= 1 then
-        local fps = math.floor(frameCount / (currentTick - lastTick))
-        local ping = 0
-        pcall(function()
-            ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
-        end)
-        
-        if BarFrame.Visible then
-            BarText.Text = "FPS " .. fps .. "  PING " .. ping .. "ms  salems-hub"
-        end
-        
-        frameCount = 0
-        lastTick = currentTick
+    while GUI.Parent do
+        task.wait(2); UpdateInfo()
+        if Settings.PlayerESP or Settings.EnemyESP or Settings.ResourceESP then ScanESP() end
     end
 end)
-
-local function crearBotonGrid(texto, callback)
-    local btn = Instance.new("TextButton")
-    btn.BackgroundColor3 = Color3.fromRGB(12, 12, 15)
-    btn.BackgroundTransparency = 0.1
-    btn.Text = texto
-    btn.TextColor3 = Color3.fromRGB(240, 240, 250)
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 9
-    btn.Parent = GridContainer
-    
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
-    local stroke = Instance.new("UIStroke", btn)
-    stroke.Color = Color3.fromRGB(40, 40, 50)
-    stroke.Thickness = 1.2
-    
-    local activo = false
-    btn.MouseButton1Click:Connect(function()
-        activo = not activo
-        btn.BackgroundColor3 = activo and Color3.fromRGB(50, 130, 230) or Color3.fromRGB(12, 12, 15)
-        if callback then callback(activo, btn) end
-    end)
-end
-
--- Bucle de velocidad forzado
-RunService.Heartbeat:Connect(function()
-    pcall(function()
-        local char = LocalPlayer.Character
-        if not char then return end
-        local humanoid = char:FindFirstChildOfClass("Humanoid")
-        if not humanoid then return end
-        
-        if laggerSpeedEnabled then
-            humanoid.WalkSpeed = 70
-        elseif carrySpeedEnabled then
-            humanoid.WalkSpeed = 45
-        elseif speedEnabled then
-            humanoid.WalkSpeed = customWalkSpeed
-        end
-    end)
+Player.CharacterAdded:Connect(function()
+    task.wait(1); local h=Humanoid()
+    if h then if Settings.Speed then h.WalkSpeed=32 end; if Settings.Jump then h.UseJumpPower=true; h.JumpPower=100 end end
 end)
-
-local autoPlayConn, batAimbotConn = nil, nil
-
-crearBotonGrid("AUTO PLAY", function(act)
-    if act then
-        autoPlayConn = RunService.RenderStepped:Connect(function()
-            pcall(function()
-                local char = LocalPlayer.Character
-                if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-                
-                local hrp = char.HumanoidRootPart
-                local humanoid = char:FindFirstChildOfClass("Humanoid")
-                if not humanoid then return end
-                
-                local targetPos = nil
-                local minDist = math.huge
-                
-                for _, obj in ipairs(workspace:GetDescendants()) do
-                    if obj:IsA("Model") and (obj.Name:lower():find("brainrot") or obj.Name:lower():find("item") or obj:FindFirstChild("Humanoid")) then
-                        if obj ~= char and obj.PrimaryPart then
-                            local dist = (hrp.Position - obj.PrimaryPart.Position).Magnitude
-                            if dist < minDist then
-                                minDist = dist
-                                targetPos = obj.PrimaryPart.Position
-                            end
-                        elseif obj:IsA("BasePart") then
-                            local dist = (hrp.Position - obj.Position).Magnitude
-                            if dist < minDist then
-                                minDist = dist
-                                targetPos = obj.Position
-                            end
-                        end
-                    end
-                end
-                
-                if targetPos then humanoid:MoveTo(targetPos) end
-            end)
-        end)
-    else
-        if autoPlayConn then autoPlayConn:Disconnect() autoPlayConn = nil end
-        pcall(function() LocalPlayer.Character.Humanoid:MoveTo(LocalPlayer.Character.HumanoidRootPart.Position) end)
-    end
-end)
-
-crearBotonGrid("BAT TP", function(act)
-    pcall(function()
-        local char = LocalPlayer.Character
-        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                char.HumanoidRootPart.CFrame = p.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
-                break
-            end
-        end
-    end)
-end)
-
-crearBotonGrid("DROP BR", function(act)
-    pcall(function()
-        local char = LocalPlayer.Character
-        if char then
-            for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
-                if tool:IsA("Tool") then
-                    tool.Parent = char
-                    task.wait(0.05)
-                    tool.Parent = workspace
-                end
-            end
-        end
-    end)
-end)
-
-crearBotonGrid("BAT AIMBOT", function(act)
-    if act then
-        batAimbotConn = RunService.RenderStepped:Connect(function()
-            pcall(function()
-                local char = LocalPlayer.Character
-                if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-                
-                local targetPart = nil
-                local minDist = math.huge
-                
-                for _, p in ipairs(Players:GetPlayers()) do
-                    if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                        local dist = (char.HumanoidRootPart.Position - p.Character.HumanoidRootPart.Position).Magnitude
-                        if dist < minDist then
-                            minDist = dist
-                            targetPart = p.Character.HumanoidRootPart
-                        end
-                    end
-                end
-                
-                if targetPart then
-                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPart.Position)
-                end
-            end)
-        end)
-    else
-        if batAimbotConn then batAimbotConn:Disconnect() batAimbotConn = nil end
-    end
-end)
-
--- TP DOWN (Eleva al cielo y cae rápido)
-crearBotonGrid("TP DOWN", function(act)
-    pcall(function()
-        local char = LocalPlayer.Character
-        if char and char:FindFirstChild("HumanoidRootPart") then
-            local hrp = char.HumanoidRootPart
-            hrp.CFrame = hrp.CFrame + Vector3.new(0, 150, 0)
-        end
-    end)
-end)
-
-crearBotonGrid("CARRY SPEED", function(act) carrySpeedEnabled = act end)
-
-crearBotonGrid("LAGGER CARRY", function(act)
-    pcall(function()
-        local char = LocalPlayer.Character
-        if char then
-            local pprops = act and PhysicalProperties.new(100, 0.3, 0) or PhysicalProperties.new(0.7, 0.3, 0.5)
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then part.CustomPhysicalProperties = pprops end
-            end
-        end
-    end)
-end)
-
-crearBotonGrid("LAGGER SPEED", function(act) laggerSpeedEnabled = act end)
-
-crearBotonGrid("INSTA RESET", function(act)
-    pcall(function()
-        local char = LocalPlayer.Character
-        if char then
-            for _, v in ipairs(char:GetChildren()) do
-                if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then v:Destroy() end
-            end
-        end
-    end)
-end)
-
-crearBotonGrid("ANTI BAT VIP", function(act)
-    pcall(function()
-        local char = LocalPlayer.Character
-        if char then
-            local forceField = char:FindFirstChildOfClass("ForceField")
-            if act and not forceField then Instance.new("ForceField", char)
-            elseif not act and forceField then forceField:Destroy() end
-        end
-    end)
-end)
-
--- AUTO STEAL (Teletransporte de precisión al objeto cercano)
-crearBotonGrid("AUTO STEAL", function(act)
-    pcall(function()
-        local char = LocalPlayer.Character
-        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-        local hrp = char.HumanoidRootPart
-        
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("ProximityPrompt") or obj.Name:lower():find("brainrot") or obj.Name:lower():find("item") then
-                local targetPart = obj.Parent
-                if targetPart and targetPart:IsA("BasePart") then
-                    hrp.CFrame = targetPart.CFrame + Vector3.new(0, 3, 0)
-                    break
-                end
-            end
-        end
-    end)
-end)
-
-crearBotonGrid("FPS / PING", function(act)
-    BarFrame.Visible = act
-end)
-
--- ==========================================
--- 3. BOTÓN FLOTANTE
--- ==========================================
-local ToggleGui = Instance.new("ScreenGui")
-ToggleGui.Name = "SalemsHubToggle"
-ToggleGui.ResetOnSpawn = false
-ToggleGui.Parent = CoreGui
-
-local OpenBtn = Instance.new("TextButton")
-OpenBtn.Size = UDim2.new(0, 38, 0, 38)
-OpenBtn.Position = UDim2.new(0, 8, 0.5, -19)
-OpenBtn.BackgroundColor3 = Color3.fromRGB(12, 12, 15)
-OpenBtn.BackgroundTransparency = 0.1
-OpenBtn.Text = "⚡"
-OpenBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-OpenBtn.TextSize = 15
-OpenBtn.Active = true
-OpenBtn.Draggable = true
-OpenBtn.Parent = ToggleGui
-Instance.new("UICorner", OpenBtn).CornerRadius = UDim.new(1, 0)
-local strokeBtn = Instance.new("UIStroke", OpenBtn)
-strokeBtn.Color = Color3.fromRGB(40, 40, 50)
-
-OpenBtn.MouseButton1Click:Connect(function()
-    MainFrame.Visible = not MainFrame.Visible
-end)
-
-speedEnabled = true
+Login.Visible=true; Main.Visible=false
+Notify("SALEMS VIP preparado")
